@@ -1,0 +1,15 @@
+#!/bin/sh
+
+case $1 in
+    server)
+	exec socat UNIX-CONNECT:$HOME/.mc_server_sock -
+	;;
+    index)
+	echo "cmd:index path:$HOME/Maildir/
+cmd:quit
+" | socat UNIX-CONNECT:$HOME/.mc_server_sock - > /dev/null
+	;;
+    *)
+	echo "the only supported sub commands are server for now"
+	;;
+esac

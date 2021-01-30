@@ -1,19 +1,40 @@
 -module(mc_sexp).
 
--export([parse/1, parse_term/1]).
+-include_lib("kernel/include/logger.hrl").
+
+-export([parse/1, parse_term/1, to_string/1, escape/1]).
 
 %% public function.
 
+%% escape an string. 
+%% backslash and double qoute are escaped
+%% wrapped in double qoute if the string contains whitespace
+-spec escape(unicode:chardata()) -> unicode:chardata().
+escape(Str) ->
+    maybe_quote(escape_special(Str)).
+
+escape_special(Str) ->
+    string:replace(string:replace(Str, "\\", "\\\\", all), "\"", "\\\"", all).
+
+quote(Str) -> [$", Str, $"].
+
+maybe_quote(Str) ->
+    {_, Remain} = string:take(Str, "\\ \r\t\n", true),
+    case string:is_empty(Remain) of
+	true -> Str;
+	false -> quote(Str)
+    end.
+
+    
 %% parse the sexp into erlang term
-%% t -> true
-%% nil -> false
 %% integer -> integer
-%% unquoted string -> binary string
-%% quoted string -> list string
-%% (value1 value2 ...) -> [value1, value2 ...]
+%% unquoted string -> atom, I am going to trust mu not to spit out too many different atoms
+%% quoted string -> binary string
+%% (value1 . value2) -> [value1 | value2] value1 and value2 must be integer, atom or string
 %% (:key1 value1 :key2 value2 ...) -> [{key1, value1}, {key2, value2} ...]
 %% key has to be with in limited set as simple string, and will be converted to atoms
 %% value can be anything as above
+%% (value1 value2 ...) -> [value1, value2 ...]
 
 -spec parse(unicode:chardata()) -> any().
 parse(Str) ->
@@ -23,34 +44,36 @@ parse(Str) ->
 	false -> error("Garbage at the end", [Str])
     end.
 
+-spec parse_term(unicode:chardata()) -> {any(), unicode:chardata()}.
 parse_term(Str) ->
     Trimmed = string:trim(Str, leading),
     case string:next_codepoint(Trimmed) of
 	[$( | Tail] -> parse_list(string:trim(Tail, leading));
-	[$" | Tail] -> parse_quoted_string(Tail);
+	[$" | Tail] ->
+	    {Term, Remain} = parse_quoted_string(Tail),
+	    {unicode:characters_to_binary(Term), Remain};
 	_ -> parse_single(Trimmed)
     end.
 
 parse_single(Str) ->
     case string:to_integer(Str) of
-	{error, _Reason} -> parse_word(Str);
+	{error, _Reason} -> parse_key(Str);
 	{Int, Rest} -> {Int, Rest}
     end.
-    
-parse_word(Str) ->
-    {Leading, Trailing} = string:take(Str, "\n\t\r\s()", true),
-    case unicode:characters_to_binary(Leading) of
-	<<>> -> error("Unexpected end of string");
-	<<"t">> -> {true, Trailing};
-	<<"nil">> -> {false, Trailing};
-	Word -> {Word, Trailing}
-    end.
-
+   
 parse_key(Str) ->
-    {Leading, Trailing} = string:take(Str, "\n\t\r\s()", true),
-    case unicode:characters_to_list(Leading) of
-	"" -> error("Unexpected end of string");
-	Word -> {list_to_atom(Word), Trailing}
+    case string:next_codepoint(Str) of
+	[] -> error("Unexpected end of string");
+	[$. | Rest] -> {dot, Rest};
+	_ ->
+	    {Leading, Trailing} = string:take(Str, "-" ++ lists:seq($a,$z)),
+	    case unicode:characters_to_list(Leading) of
+		"" ->
+		    ?LOG_ERROR("No key: ~ts", [string:slice(Str, 0, 32)]),
+		    error("Unexpected end of string");
+		Word ->
+		    {list_to_atom(Word), Trailing}
+	    end
     end.
 
 parse_quoted_string(Str) ->
@@ -89,7 +112,14 @@ parse_list(Str) ->
 	_ ->
 	    {Term, Remain2} = parse_term(Str),
 	    {List, Remain3} = parse_regular_list(string:trim(Remain2, leading)),
-	    {[Term | List], Remain3}
+	    case List of
+		[dot, Tail] when
+		      (is_integer(Term) orelse is_atom(Term) orelse is_binary(Term)) andalso
+		      (is_integer(Tail) orelse is_atom(Tail) orelse is_binary(Tail)) ->
+		    {[Term | Tail], Remain3};
+		[dot | _Tail ] -> error("illegal cons cell");
+		_ -> {[Term | List], Remain3}
+	    end
     end.
 
 parse_plist(Str) ->
@@ -101,16 +131,28 @@ parse_plist(Str) ->
 	    {Value, Remain2} = parse_term(Remain),
 	    {Plist, Remain3} = parse_plist(string:trim(Remain2, leading)),
 	    {[{Key, Value} | Plist], Remain3};
-	_ -> error("Expect plist", [Str])
+	_ -> error("Expect plist")
     end.
 
 parse_regular_list(Str) ->
     case string:next_codepoint(Str) of
 	[] -> error("Unexpected end of string");
 	[$) | Tail] -> {[], Tail};
-	[$: | _Tail] -> error("Expect regular list", [Str]);
+	[$: | _Tail] -> error("Expect regular list");
 	_ ->
 	    {Term, Remain2} = parse_term(Str),
 	    {List, Remain3} = parse_regular_list(string:trim(Remain2, leading)),
 	    {[Term | List], Remain3}
     end.
+
+-spec to_string(any()) -> unicode:chardata(). 
+to_string(I) when is_integer(I) -> integer_to_binary(I);
+to_string(A) when is_atom(A) -> atom_to_binary(A, utf8);
+to_string(B) when is_binary(B) -> quote(escape_special(B)); 
+to_string({K, V}) when is_atom(K) ->
+    [[":", atom_to_binary(K, utf8), $\s], to_string(V)];
+to_string([H | T]) when (is_integer(H) orelse is_atom(H) orelse is_binary(H))
+			andalso (is_integer(T) orelse is_atom(T) orelse is_binary(T)) ->
+    [$(, to_string(H), " . ", to_string(T), $)];
+to_string(L) when is_list(L) ->
+    ["(", lists:join(" ", lists:map(fun to_string/1, L)), ")\n"].

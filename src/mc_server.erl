@@ -77,7 +77,6 @@ parse_header(<<_Head, Rest/binary>>) -> parse_header(Rest).
 %% callbacks
 
 init([]) ->
-    process_flag(trap_exit, true),
     Port = open_port({spawn, "mu server"}, [binary]),
     Command = mc_mu_api:init_command(),
     port_command(Port, mc_cmd:to_string(Command)),
@@ -89,11 +88,7 @@ terminate(_Reason, State) -> kill(State).
 %% ignore everything mu give us outside calls
 handle_info({_Port, {data, Binary}}, State) ->
     ?LOG_NOTICE("Got junk ~ts", [Binary]),
-    {noreply, State};
-handle_info({'EXIT', _Port, Reason}, _State) ->
-    ?LOG_ERROR("Port unexpected closed: ~p", [Reason]),
-    %% don't bother with relaunch, just crash and let the supervisor handling that
-    error("Port unexpected closed").
+    {noreply, State}.
 
 handle_call({mu_server, Command}, _From, State = #mc_state{port = Port}) ->
     port_command(Port, mc_cmd:to_string(Command)),

@@ -13,11 +13,10 @@ start_link() ->
 
 init() ->
     register(?MODULE, self()),
-    process_flag(trap_exit, true),
     Dir = mc_mu_api:default(index_path),
-    Port = open_port({spawn, unicode:characters_to_list(["inotifywait -m -e moved_to ",
-					    Dir, "/new/"])},
-		     [binary]),
+    %% I have to watch for both move_to and create. Some program use one or the other
+    Command = ["inotifywait -m -e moved_to -e create ", Dir, "/new/"],
+    Port = open_port({spawn, unicode:characters_to_list(Command)}, [binary]),
     move_existing_new_mail(Dir),
     watch_loop(<<>>, Dir, Port).
 
@@ -26,10 +25,6 @@ watch_loop(Buffer, Dir, Port) ->
 	{ok, Remain} -> watch_loop(Remain, Dir, Port);
 	{incomplete, Remain} ->
 	    receive
-		{'EXIT', Port, Reason} ->
-		    ?LOG_WARNING("Port closed with reason ~p", [Reason]);
-		{'EXIT', _From, Reason} ->
-		    ?LOG_WARNING("Received EXIT with reason ~p", [Reason]);
 		{Port, {data, Binary}} ->
 		    watch_loop(<<Remain/binary, Binary/binary>>, Dir, Port)
 	    end

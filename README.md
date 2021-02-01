@@ -6,6 +6,7 @@ maildir commander is a wrapper arond maildir-utils to make it more versatile. `m
 * [mu](https://www.djcbsoftware.nl/code/mu/)
 * erlang OTP 21+
 * socat, which is used to re-export the `mu server` compatible interface
+* inotify-tools, for watching the Maildir for new mails
 
 ## the server
 
@@ -20,6 +21,16 @@ $ socat UNIX-CONNECT:$HOME/.mc_server_sock -
 ```
 
 behave exactly like `mu server`, except now you can run multiple instances. I have a shell script in `scripts/mc` that can be a drop in repleacement of mu (now only `mc server` is supported, in the future I plan to re-implement all mu client side sub-commands.
+
+## the watcher
+
+`maildir_commander` also has a watcher that watchs the Maildir for new mails and add to the mu database automatically. Given that `maildir_commander` always do a full index on startup, there is little reason to run indexing yourself anymore.
+
+The watcher will also move new mails to the cur dir as per [maildir standard](https://cr.yp.to/proto/maildir.html). Therefore, you must ensure that the IMAP server is not getting in its way. If you are using exim, please make sure the local delivery is done via `maildir_home`, not with a IMAP specific LDA such as `dovecot_delivery`. Also please turn off the auto movement of new mails in your IMAP server. In dovecot, it is controlled in `/etc/dovecot/conf.d/10-mail.conf` with a line as:
+
+```
+maildir_empty_new = no
+```
 
 ## Future works
 

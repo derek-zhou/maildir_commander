@@ -35,8 +35,6 @@ read_port_until(Buffer, Sexps, Test_done, Port) ->
 	false -> read_port_until(Remain, New_Sexps, Test_done, Port)
     end.
 	
-read_port(Port) -> read_port(<<>>, Port).
-
 read_port(Buffer, Port) ->
     case parse_header(Buffer) of
 	{incomplete, Remain} ->
@@ -100,12 +98,8 @@ handle_info({'EXIT', _Port, Reason}, _State) ->
 handle_call({mu_server, Command}, _From, State = #mc_state{port = Port}) ->
     port_command(Port, mc_cmd:to_string(Command)),
     % we do not care about left over
-    {Sexp, _Remain} =
-	case mc_mu_api:has_multi_sexp_resp(Command) of
-	    true -> read_port_until(mc_mu_api:fun_ending(Command), Port);
-	    false -> read_port(Port)
-	end,
-    {reply, Sexp, State};
+    {Sexps, _Remain} = read_port_until(mc_mu_api:fun_ending(Command), Port),
+    {reply, Sexps, State};
 handle_call({mu_server_async, Command}, {Client, _Tag}, State = #mc_state{port = Port}) ->
     port_command(Port, mc_cmd:to_string(Command)),
     Fun = mc_mu_api:fun_ending(Command),
@@ -115,11 +109,7 @@ handle_call({mu_server_async, Command}, {Client, _Tag}, State = #mc_state{port =
 handle_cast({mu_server, Command}, State = #mc_state{port = Port}) ->
     port_command(Port, mc_cmd:to_string(Command)),
     % we do not care about return values
-    {_Sexp, _Remain} =
-	case mc_mu_api:has_multi_sexp_resp(Command) of
-	    true -> read_port_until(mc_mu_api:fun_ending(Command), Port);
-	    false -> read_port(Port)
-	end,
+    {_Sexps, _Remain} = read_port_until(mc_mu_api:fun_ending(Command), Port),
     {noreply, State}.
 
 handle_continue(async, State = #mc_state{port = Port,
@@ -128,7 +118,7 @@ handle_continue(async, State = #mc_state{port = Port,
 					 buffer = Buffer}) ->
     {Sexp, Remain} = read_port(Buffer, Port),
     if Client /= undefined -> Client ! {async, Sexp};
-       Client == undefined -> ?LOG_NOTICE("Mu server init got: ~p", [Sexp])
+       Client == undefined -> ok
     end,
     case Test_done(Sexp) of
 	true ->

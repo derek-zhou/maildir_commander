@@ -30,11 +30,11 @@ parse(Str) ->
 
 parse_key(Str) ->
     {Leading, Trailing} = string:take(Str, ":", true),
-    case unicode:characters_to_list(Leading) of
-	"" -> incomplete;
+    case unicode:characters_to_binary(Leading) of
+	<<>> -> incomplete;
 	Word ->
 	    [$: | Remain] = string:next_codepoint(Trailing),
-	    {list_to_atom(Word), Remain}
+	    {Word, Remain}
     end.
 
 parse_value(Str) ->
@@ -91,15 +91,14 @@ parse_quoted_string_after_escape(Str) ->
 		    end
 	    end
     end.
-    
+
+value_string(true) -> <<"true">>;
+value_string(false) -> <<"false">>;
+value_string(I) when is_integer(I) -> integer_to_binary(I);
+value_string(V) -> mc_sexp:escape(V).
+
 -spec to_string(proplists:proplist()) -> unicode:chardata().
 to_string([]) -> "\n";
-to_string([{Key, Value} | T]) ->
-    Value_string =
-	if is_integer(Value) -> integer_to_binary(Value);
-	   is_atom(Value) -> atom_to_binary(Value, utf8);
-	   is_binary(Value) -> mc_sexp:escape(Value);
-	   is_list(Value) -> mc_sexp:escape(Value)
-	end,
-    [[atom_to_binary(Key, utf8), $:, Value_string, $ ] | to_string(T)].
+to_string([{} | T]) -> to_string(T);
+to_string([{Key, Value} | T]) -> [[Key, $:, value_string(Value), $ ] | to_string(T)].
 

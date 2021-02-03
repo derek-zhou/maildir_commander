@@ -1,5 +1,4 @@
 -module(mc_local_server).
--define(SERVER, mc_server).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -21,9 +20,13 @@ init() ->
     accept_loop(LSock).
 
 accept_loop(LSock) ->
-    {ok, Sock} = gen_tcp:accept(LSock),
-    spawn(?MODULE, service, [Sock]),
-    accept_loop(LSock).
+    case gen_tcp:accept(LSock) of
+	{ok, Sock} ->
+	    spawn(?MODULE, service, [Sock]),
+	    accept_loop(LSock);
+	{error, closed} -> ok;
+	{error, Reason} -> error(Reason)
+    end.
 
 service(Sock) ->
     ?LOG_NOTICE("Client connected"),    
@@ -35,17 +38,14 @@ service_loop(Buffer, Sock) ->
 	incomplete ->
 	    {ok, Packet} = gen_tcp:recv(Sock, 0),
 	    service_loop(Buffer ++ [Packet], Sock);
+	{[{<<"cmd">>, <<"quit">>} | _], _Remain} ->
+	    ?LOG_NOTICE("Client sent quit"),
+	    gen_tcp:shutdown(Sock, read_write);
 	{Command, Remain} ->
-	    case mc_mu_api:cmd_of(Command) of
-		"quit" ->
-		    ?LOG_NOTICE("Client sent quit"),
-		    gen_tcp:shutdown(Sock, read_write);
-		_ ->	      
-		    ok = gen_server:call(?SERVER, {mu_server_async, Command}),
-		    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
-		    print_prompt(Sock),
-		    service_loop([Remain], Sock)
-	    end
+	    ok = mc_server:async_command(Command),
+	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
+	    print_prompt(Sock),
+	    service_loop([Remain], Sock)
     end.
 
 send_sexp_loop(Test_done, Sock) ->

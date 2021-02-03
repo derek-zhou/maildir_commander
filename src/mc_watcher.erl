@@ -67,13 +67,12 @@ move_mail_to_cur(File, Dir) ->
 	    ok = file:rename(Path, Dest),
 	    %% the sent function name is from mu. add return too much crap
 	    Sexp = mc_mu_api:sent(Dest, "/"),
-	    case proplists:is_defined(error, Sexp) of
-		false ->
-		    ?LOG_NOTICE("added ~ts to the database, docid: ~B",
-				[File, proplists:get_value(docid, Sexp)]);
-		true ->
+	    case hd(Sexp) of
+		{<<"error">>, Code} ->
 		    ?LOG_WARNING("error in adding ~ts. Error code ~B: ~ts",
-				 [File, proplists:get_value(error, Sexp),
-				  proplists:get_value(message, Sexp)])
+				 [File, Code, proplists:get_value(<<"message">>, Sexp)]);
+		_ ->
+		    ?LOG_NOTICE("added ~ts to the database, docid: ~B",
+				[File, proplists:get_value(<<"docid">>, Sexp)])
 	    end
     end.

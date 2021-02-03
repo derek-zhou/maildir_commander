@@ -1,5 +1,4 @@
 -module(mc_mu_api).
--define(SERVER, mc_server).
 
 % this moddule wrap around mu server with erlang api
 
@@ -15,7 +14,7 @@
 	 ping/0,
 	 contacts/0, contacts/1, contacts/2,
 	 index/0, index/1, index/2, index/3, index/4 ]).
--export([init_command/0, fun_ending/1, cmd_of/1, default/1 ]).
+-export([init_command/0, quit_command/0, fun_ending/1, default/1 ]).
 
 find(Query) ->
     find(Query, default(threading)).
@@ -36,19 +35,20 @@ find(Query, Threads, Sortfield, Reverse, Maxnum, Skip_dups) ->
     find(Query, Threads, Sortfield, Reverse, Maxnum, Skip_dups, default(include_related)).
 
 find(Query, Threads, Sortfield, Reverse, Maxnum, Skip_dups, Include_related) ->
-    Command = [{cmd, "find"}, 
-	       {query, base64:encode(unicode:characters_to_binary(Query))},
-	       {threads, Threads},
-	       {sortfield, Sortfield},
-	       {reverse, Reverse},
-	       {maxnum, Maxnum},
-	       {'skip-dups', Skip_dups},
-	       {'include-related', Include_related}],
-    Sexps = gen_server:call(?SERVER, {mu_server, Command}),
-    case proplists:is_defined(error, hd(Sexps)) of
-	true -> hd(Sexps);  %% error
+    Command = [{<<"cmd">>, <<"find">>},
+	       {<<"query">>, base64:encode(unicode:characters_to_binary(Query))},
+	       {<<"threads">>, Threads},
+	       {<<"sortfield">>, Sortfield},
+	       {<<"reverse">>, Reverse},
+	       {<<"maxnum">>, Maxnum},
+	       {<<"skip-dups">>, Skip_dups},
+	       {<<"include-related">>, Include_related}],
+    Sexps = mc_server:command(Command),
+    Head = hd(Sexps),
+    case hd(Head) of
+	{<<"error">>, _} -> Head;  %% error
 	%% date is the signature field of a valid found results
-	false -> lists:filter(fun(Each) -> proplists:is_defined(date, Each) end, Sexps)
+	_ -> lists:filter(fun(Each) -> proplists:is_defined(<<"date">>, Each) end, Sexps)
     end.    
 
 move(Id, Maildir) ->
@@ -58,27 +58,32 @@ move(Id, Maildir, Flags) ->
     move(Id, Maildir, Flags, default(move_new_name)).
 
 move(Id, Maildir, Flags, Newname) -> 
-    Command = if is_integer(Id) -> [{cmd, "move"}, {docid, Id}];
-		 true -> [{cmd, "move"}, {msgid, Id}]
-	      end,
-    Command2 = if Maildir == undefined -> Command;
-		  true -> [Command ++ [{maildir, Maildir}]]
+    Command = [{<<"cmd">>, <<"move">>},
+	       if is_integer(Id) -> {<<"docid">>, Id};
+		  true -> {<<"msgid">>, Id}
 	       end,
-    Command3 = if Flags == undefined -> Command2;
-		  true -> [Command2 ++ [{flags, Flags}]]
+	       if Maildir == undefined -> {};
+		  true -> {<<"maildir">>, Maildir}
 	       end,
-    Command4 = [Command3 ++ [{newname, Maildir /= undefined and Newname}]],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command4}),
+	       if Flags == undefined -> {};
+		  true -> {<<"flags">>, Flags}
+	       end,
+	       {<<"newname">>, Maildir /= undefined and Newname}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 add(Path, Maildir) ->
-    Command = [{cmd, "add"}, {path, Path}, {maildir, Maildir}],
-    Sexps = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"add">>},
+	       {<<"path">>, Path},
+	       {<<"maildir">>, Maildir}],
+    Sexps = mc_server:command(Command),
     lists:last(Sexps).
     
 sent(Path, Maildir) ->
-    Command = [{cmd, "sent"}, {path, Path}, {maildir, Maildir}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"sent">>},
+	       {<<"path">>, Path},
+	       {<<"maildir">>, Maildir}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
     
 view(Id) ->
@@ -94,20 +99,21 @@ view(Id, Path, Extract_images, Extract_encrypted) ->
     view(Id, Path, Extract_images, Extract_encrypted, default(use_agent)).
     
 view(Id, Path, Extract_images, Extract_encrypted, Use_agent) ->
-    Id_part =
-	if Id == undefined -> {path, Path};
-	   is_integer(Id) -> {docid, Id};
-	   true -> {msgid, Id}
-	end,
-    Command = [{cmd, "view"}, Id_part] ++
-	[{'extract-images', Extract_images},
-	 {'extract-encrypted', Extract_encrypted},
-	 {'use-agent', Use_agent}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"view">>},
+	       if Id == undefined -> {<<"path">>, Path};
+		  is_integer(Id) -> {<<"docid">>, Id};
+		  true -> {<<"msgid">>, Id}
+	       end,
+	       {<<"extract-images">>, Extract_images},
+	       {<<"extract-encrypted">>, Extract_encrypted},
+	       {<<"use-agent">>, Use_agent}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
     
 compose() ->
-    [Sexp] = gen_server:call(?SERVER, {mu_server, [{cmd, "compose"}, {type, "new"}]}),
+    Command = [{<<"cmd">>, <<"compose">>},
+	       {<<"type">>, <<"new">>}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 compose(Type, Docid) ->
     compose(Type, Docid, default(extract_encrypted)).
@@ -115,12 +121,12 @@ compose(Type, Docid, Extract_encrypted) ->
     compose(Type, Docid, Extract_encrypted, default(use_agent)).
 compose(Type, Docid, Extract_encrypted, Use_agent)
   when Type == forward; Type == reply; Type == edit; Type == resend ->
-    Command = [{cmd, "compose"},
-	       {type, Type},
-	       {docid, Docid},
-	       {'extract-encrypted', Extract_encrypted},
-	       {'use-agent', Use_agent}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"compose">>},
+	       {<<"type">>, Type},
+	       {<<"docid">>, Docid},
+	       {<<"extract-encrypted">>, Extract_encrypted},
+	       {<<"use-agent">>, Use_agent}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 extract(open, Docid, Index) ->
@@ -138,54 +144,57 @@ extract(temp, Docid, Index, What, Param) ->
 extract(save, Docid, Index, Path, Extract_encrypted) ->
     extract(save, Docid, Index, Path, Extract_encrypted, default(use_agent));
 extract(open, Docid, Index, Extract_encrypted, Use_agent) ->
-    Command = [{cmd, "extract"},
-	       {action, "open"},
-	       {docid, Docid},
-	       {index, Index},
-	       {'extract-encrypted', Extract_encrypted},
-	       {'use-agent', Use_agent}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"extract">>},
+	       {<<"action">>, <<"open">>},
+	       {<<"docid">>, Docid},
+	       {<<"index">>, Index},
+	       {<<"extract-encrypted">>, Extract_encrypted},
+	       {<<"use-agent">>, Use_agent}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 extract(temp, Docid, Index, What, Param, Extract_encrypted) ->
     extract(temp, Docid, Index, What, Param, Extract_encrypted, default(use_agent));
 extract(save, Docid, Index, Path, Extract_encrypted, Use_agent) ->
-    Command = [{cmd, "extract"},
-	       {action, "save"},
-	       {docid, Docid},
-	       {index, Index},
-	       {path, Path},
-	       {'extract-encrypted', Extract_encrypted},
-	       {'use-agent', Use_agent}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"extract">>},
+	       {<<"action">>, <<"save">>},
+	       {<<"docid">>, Docid},
+	       {<<"index">>, Index},
+	       {<<"path">>, Path},
+	       {<<"extract-encrypted">>, Extract_encrypted},
+	       {<<"use-agent">>, Use_agent}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 extract(temp, Docid, Index, What, Param, Extract_encrypted, Use_agent) ->
-    Command = [{cmd, "extract"},
-	       {action, "temp"},
-	       {docid, Docid},
-	       {index, Index},
-	       {what, What}],
-    Command2 = if Param == undefined -> Command;
-		  true -> Command ++ [{param, Param}]
+    Command = [{<<"cmd">>, <<"extract">>},
+	       {<<"action">>, <<"temp">>},
+	       {<<"docid">>, Docid},
+	       {<<"index">>, Index},
+	       {<<"what">>, What},
+	       if Param == undefined -> {};
+		  true -> {<<"param">>, Param}
 	       end,
-    Command3 = Command2 ++ [{'extract-encrypted', Extract_encrypted},
-			   {'use-agent', Use_agent}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command3}),
+	       {<<"extract-encrypted">>, Extract_encrypted},
+	       {<<"use-agent">>, Use_agent}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
     
 remove(Docid) ->
-    Command = [{cmd, "remove"}, {docid, Docid}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"remove">>},
+	       {<<"docid">>, Docid}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 mkdir(Path) ->
-    Command = [{cmd, "mkdir"}, {path, Path}],
-    [Sexp] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"mkdir">>},
+	       {<<"path">>, Path}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 ping() ->
-    [Sexp] = gen_server:call(?SERVER, {mu_server, [{cmd, "ping"}]}),
+    Command = [{<<"cmd">>, <<"ping">>}],
+    [Sexp] = mc_server:command(Command),
     Sexp.
 
 contacts() ->
@@ -195,8 +204,10 @@ contacts(Personal) ->
     contacts(Personal, default(contacts_after)).
 
 contacts(Personal, After) ->
-    Command = [{cmd, "contacts"}, {personal, Personal}, {'after', After}],
-    [{contacts, List}] = gen_server:call(?SERVER, {mu_server, Command}),
+    Command = [{<<"cmd">>, <<"contacts">>},
+	       {<<"personal">>, Personal},
+	       {<<"after">>, After}],
+    [[{<<"contacts">>, List}]] = mc_server:command(Command),
     List.
     
 index() ->
@@ -212,44 +223,43 @@ index(Path, My_addresses, Cleanup) ->
     index(Path, My_addresses, Cleanup, default(index_lazy_check)).
 
 index(Path, My_addresses, Cleanup, Lazy_check) ->
-    Command = [{cmd, "index"}, {path, Path}],
-    Command2 = if My_addresses == [] -> Command;
-		  true -> Command ++ [{'my-address', lists:join($,, My_addresses)}]
+    Command = [{<<"cmd">>, <<"index">>},
+	       {<<"path">>, Path},
+	       if My_addresses == [] -> {};
+		  true -> {<<"my-address">>, lists:join($,, My_addresses)}
 	       end,
-    Command3 = Command2 ++ [{cleanup, Cleanup}, {'lazy-check', Lazy_check}],
-    Sexps = gen_server:call(?SERVER, {mu_server, Command3}),
+	       {<<"cleanup">>, Cleanup},
+	       {<<"lazy-check">>, Lazy_check}],
+    Sexps = mc_server:command(Command),
     lists:last(Sexps).
 
 init_command() ->
-    Command = [{cmd, "index"}, {path, default(index_path)}],
-    case default(my_addresses) of
-	[] ->Command;
-	My_addresses -> Command ++ [{'my-address', lists:join($,, My_addresses)}]
-    end.
+    [{<<"cmd">>, <<"index">>},
+     {<<"path">>, default(index_path)},
+     case default(my_addresses) of
+	 [] -> {};
+	 My_addresses -> {<<"my-address">>, lists:join($,, My_addresses)}
+     end].
 
-cmd_of(Command) ->
-    unicode:characters_to_list(proplists:get_value(cmd, Command)).
+quit_command() ->
+    [{<<"cmd">>, <<"quit">>}].
 
-fun_ending(Command) ->
-    case cmd_of(Command) of
-	"find" ->
-	    fun(Sexp) ->
-		    proplists:is_defined(error, Sexp) orelse
-			proplists:is_defined(found, Sexp)
-	    end;
-	"index" ->
-	    fun(Sexp) ->
-		    proplists:is_defined(error, Sexp) orelse
-			proplists:get_value(status, Sexp, undefined) == complete
-	    end;
-	"add" ->
-	    fun(Sexp) ->
-		    proplists:is_defined(error, Sexp) orelse
-			proplists:get_value(update, Sexp)
-	    end;
-	_  ->
-	    fun(_Sexp) -> true end
-    end.    
+fun_ending([{<<"cmd">>, <<"find">>} | _]) ->
+    fun([{<<"error">>, _} | _Tail]) -> true;
+       ([{<<"found">>, _} | _Tail]) -> true;
+       (_) -> false
+    end;
+fun_ending([{<<"cmd">>, <<"index">>} | _]) ->
+    fun([{<<"error">>, _} | _Tail]) -> true;
+       ([{<<"info">>, index}, {<<"status">>, complete} | _Tail]) -> true;
+       (_) -> false
+    end;
+fun_ending([{<<"cmd">>, <<"add">>} | _]) ->
+    fun([{<<"error">>, _} | _Tail]) -> true;
+       ([{<<"update">>, _} | _Tail]) -> true;
+       (_) -> false
+    end;
+fun_ending(_) -> fun(_) -> true end.
 
 %% internal functions
 

@@ -32,7 +32,7 @@ maybe_quote(Str) ->
 %% quoted string -> binary string
 %% (value1 . value2) -> [value1 | value2] value1 and value2 must be integer, atom or string
 %% (:key1 value1 :key2 value2 ...) -> [{key1, value1}, {key2, value2} ...]
-%% key has to be with in limited set as simple string, and will be converted to atoms
+%% key has to be with in limited set as simple string, and will be converted to binaries
 %% value can be anything as above
 %% (value1 value2 ...) -> [value1, value2 ...]
 
@@ -46,22 +46,35 @@ parse(Str) ->
 
 -spec parse_term(unicode:chardata()) -> {any(), unicode:chardata()}.
 parse_term(Str) ->
-    Trimmed = string:trim(Str, leading),
+    Trimmed = trim(Str),
     case string:next_codepoint(Trimmed) of
-	[$( | Tail] -> parse_list(string:trim(Tail, leading));
+	[$( | Tail] -> parse_list(trim(Tail));
 	[$" | Tail] ->
 	    {Term, Remain} = parse_quoted_string(Tail),
 	    {unicode:characters_to_binary(Term), Remain};
 	_ -> parse_single(Trimmed)
     end.
 
+trim(Str) ->
+    Trimmed = string:trim(Str, leading),
+    case string:next_codepoint(Trimmed) of
+	[] -> Trimmed;
+	[$; | Tail] ->   %% elisp comment
+	    {_Leading, Trailing} = string:take(Tail, "\n", true),
+	    case string:is_empty(Trailing) of
+		true -> error("Unexpected end of input", [Str]);
+		false -> trim(Trailing)
+	    end;
+	_ -> Trimmed
+    end.
+
 parse_single(Str) ->
     case string:to_integer(Str) of
-	{error, _Reason} -> parse_key(Str);
+	{error, _Reason} -> parse_atom(Str);
 	{Int, Rest} -> {Int, Rest}
     end.
-   
-parse_key(Str) ->
+
+parse_atom(Str) ->
     case string:next_codepoint(Str) of
 	[] -> error("Unexpected end of string");
 	[$. | Rest] -> {dot, Rest};
@@ -69,11 +82,20 @@ parse_key(Str) ->
 	    {Leading, Trailing} = string:take(Str, "-" ++ lists:seq($a,$z)),
 	    case unicode:characters_to_list(Leading) of
 		"" ->
-		    ?LOG_ERROR("No key: ~ts", [string:slice(Str, 0, 32)]),
+		    ?LOG_ERROR("No atom: ~ts", [string:slice(Str, 0, 32)]),
 		    error("Unexpected end of string");
 		Word ->
 		    {list_to_atom(Word), Trailing}
 	    end
+    end.
+
+parse_key(Str) ->
+    {Leading, Trailing} = string:take(Str, "\\\"\s\t\n()", true),
+    case unicode:characters_to_binary(Leading) of
+	<<>> ->
+	    ?LOG_ERROR("No key: ~ts", [string:slice(Str, 0, 32)]),
+	    error("Unexpected end of string");
+	Word -> {Word, Trailing}
     end.
 
 parse_quoted_string(Str) ->
@@ -107,11 +129,11 @@ parse_list(Str) ->
 	[$: | Tail] ->
 	    {Key, Remain} = parse_key(Tail),
 	    {Value, Remain2} = parse_term(Remain),
-	    {Plist, Remain3} = parse_plist(string:trim(Remain2, leading)),
+	    {Plist, Remain3} = parse_plist(trim(Remain2)),
 	    {[{Key, Value} | Plist], Remain3};
 	_ ->
 	    {Term, Remain2} = parse_term(Str),
-	    {List, Remain3} = parse_regular_list(string:trim(Remain2, leading)),
+	    {List, Remain3} = parse_regular_list(trim(Remain2)),
 	    case List of
 		[dot, Tail] when
 		      (is_integer(Term) orelse is_atom(Term) orelse is_binary(Term)) andalso
@@ -129,7 +151,7 @@ parse_plist(Str) ->
 	[$: | Tail] ->
 	    {Key, Remain} = parse_key(Tail),
 	    {Value, Remain2} = parse_term(Remain),
-	    {Plist, Remain3} = parse_plist(string:trim(Remain2, leading)),
+	    {Plist, Remain3} = parse_plist(trim(Remain2)),
 	    {[{Key, Value} | Plist], Remain3};
 	_ -> error("Expect plist")
     end.
@@ -141,7 +163,7 @@ parse_regular_list(Str) ->
 	[$: | _Tail] -> error("Expect regular list");
 	_ ->
 	    {Term, Remain2} = parse_term(Str),
-	    {List, Remain3} = parse_regular_list(string:trim(Remain2, leading)),
+	    {List, Remain3} = parse_regular_list(trim(Remain2)),
 	    {[Term | List], Remain3}
     end.
 
@@ -149,8 +171,7 @@ parse_regular_list(Str) ->
 to_string(I) when is_integer(I) -> integer_to_binary(I);
 to_string(A) when is_atom(A) -> atom_to_binary(A, utf8);
 to_string(B) when is_binary(B) -> quote(escape_special(B)); 
-to_string({K, V}) when is_atom(K) ->
-    [[":", atom_to_binary(K, utf8), $\s], to_string(V)];
+to_string({K, V}) when is_binary(K) -> [":", K, $\s, to_string(V)];
 to_string([H | T]) when (is_integer(H) orelse is_atom(H) orelse is_binary(H))
 			andalso (is_integer(T) orelse is_atom(T) orelse is_binary(T)) ->
     [$(, to_string(H), " . ", to_string(T), $)];

@@ -15,7 +15,7 @@ init() ->
     register(?MODULE, self()),
     Dir = mc_mu_api:default(index_path),
     %% I have to watch for both move_to and create. Some program use one or the other
-    Command = ["inotifywait -m -e moved_to -e create ", Dir, "/new/"],
+    Command = ["inotifywait -q -m -e moved_to -e create ", Dir, "/new/"],
     Port = open_port({spawn, unicode:characters_to_list(Command)}, [binary]),
     move_existing_new_mail(Dir),
     watch_loop(<<>>, Dir, Port).
@@ -65,14 +65,10 @@ move_mail_to_cur(File, Dir) ->
 	    %% per maildir standard: https://cr.yp.to/proto/maildir.html
 	    Dest = unicode:characters_to_list([Dir, "/cur/", File, ":2,"]),
 	    ok = file:rename(Path, Dest),
-	    %% the sent function name is from mu. add return too much crap
-	    Sexp = mc_mu_api:sent(Dest, "/"),
-	    case hd(Sexp) of
-		{<<"error">>, Code} ->
-		    ?LOG_WARNING("error in adding ~ts. Error code ~B: ~ts",
-				 [File, Code, proplists:get_value(<<"message">>, Sexp)]);
-		_ ->
-		    ?LOG_NOTICE("added ~ts to the database, docid: ~B",
-				[File, proplists:get_value(<<"docid">>, Sexp)])
+	    case maildir_commander:add(Dest) of
+		{error, Msg} ->
+		    ?LOG_WARNING("error in adding ~ts. Error: ~ts", [File, Msg]);
+		{ok, Docid} ->
+		    ?LOG_NOTICE("added ~ts to the database, docid: ~B", [File, Docid])
 	    end
     end.

@@ -4,7 +4,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% apis
--export([start_link/0, async_command/1, command/1]).
+-export([start_link/0, command/1]).
 
 %% callbacks
 -export([terminate/3, code_change/4, init/1, callback_mode/0]).
@@ -22,9 +22,6 @@ start_link() ->
 command(Command) ->
     gen_statem:call(?MODULE, {command, Command}).
 
-async_command(Command) ->
-    gen_statem:call(?MODULE, {async_command, Command}).
-
 %% Mandatory callback functions
 code_change(_Vsn, State, Data, _Extra) ->
     {ok,State,Data}.
@@ -40,7 +37,7 @@ init([]) ->
 
 %% internal functions
 kill(#mc_state{port = Port}) ->
-    Command = mc_mu_api:quit_command(),
+    Command = mc_mu_api:quit(),
     port_command(Port, mc_cmd:to_string(Command)),
     %% we do not care what the server has to say in quit; and it is not reliable anyway.
     %% however we want to wait until the server close the port, don't sigpipe the server
@@ -50,7 +47,7 @@ kill(#mc_state{port = Port}) ->
 
 cold_boot() ->
     Data = #mc_state{port = Port} = boot(),
-    Command = mc_mu_api:init_command(),
+    Command = mc_mu_api:index(),
     port_command(Port, mc_cmd:to_string(Command)),
     Fun = mc_mu_api:fun_ending(Command),
     Data#mc_state{end_test = Fun}.
@@ -60,17 +57,6 @@ boot() ->
     Port = open_port({spawn, "mu server"}, [binary]),
     #mc_state{port = Port}.
     
-read_port_until(Test_done, Port) -> read_port_until(<<>>, [], Test_done, Port).
-
-read_port_until(Buffer, Sexps, Test_done, Port) ->
-    {Sexp, Remain} = read_port(Buffer, Port),
-    New_Sexps = [Sexp | Sexps],
-
-    case Test_done(Sexp) of
-	true -> {lists:reverse(New_Sexps), Remain};
-	false -> read_port_until(Remain, New_Sexps, Test_done, Port)
-    end.
-
 flush_port(Port) ->
     receive
 	{'EXIT', Port, _Reason} -> ok;
@@ -154,15 +140,7 @@ running(internal, async, Data = #mc_state{port = Port,
 	    {keep_state,
 	     Data#mc_state{buffer = Remain}, [{next_event, internal, async}]}
     end;
-running({call, From}, {command, Command},
-	Data = #mc_state{port = Port, count = Count}) ->
-    port_command(Port, mc_cmd:to_string(Command)),
-    % we do not care about left over
-    {Sexps, _Remain} = read_port_until(mc_mu_api:fun_ending(Command), Port),
-    {keep_state,
-     Data#mc_state{count = Count + 1},
-     [{reply, From, Sexps}]};
-running({call, From = {Client, _Tag}}, {async_command, Command},
+running({call, From = {Client, _Tag}}, {command, Command},
 	Data = #mc_state{port = Port, count = Count}) ->
     port_command(Port, mc_cmd:to_string(Command)),
     Fun = mc_mu_api:fun_ending(Command),

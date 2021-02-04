@@ -46,9 +46,37 @@ service_loop(Buffer, Sock) ->
 	    ?LOG_NOTICE("Client sent quit"),
 	    gen_tcp:shutdown(Sock, write);
 	{Command = [{<<"cmd">>, _} | _], Remain} ->
-	    ok = mc_server:async_command(Command),
+	    ok = mc_server:command(Command),
 	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
-	    service_loop([Remain], Sock)
+	    service_loop([Remain], Sock);
+	{[{<<"cmdx">>, <<"index">>} | _], Remain} ->
+	    ok = mc_server:command(mc_mu_api:index()),
+	    wait_index_loop(Sock),
+	    service_loop([Remain], Sock);
+	{[{<<"cmdx">>, Command} | Args], _Remain} ->
+	    gen_tcp:send(Sock, issue_command(Command, Args)),
+	    gen_tcp:shutdown(Sock, write)
+    end.
+
+issue_command(<<"index">>, _Args) ->
+    case maildir_commander:index() of
+	{error, Message} ->
+	    io_lib:format("error: ~ts~n", [Message]);
+	{ok, Num} ->
+	    io_lib:format("~B messages indexed~n", [Num])
+    end.
+
+wait_index_loop(Sock) ->
+    receive
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} ->
+	    gen_tcp:send(Sock, io_lib:format("error: ~ts~n", [Msg]));
+	{async, [{<<"info">>, index}, {<<"status">>, complete} | Rest ]} ->
+	    gen_tcp:send(Sock, io_lib:format("~B messages indexed~n",
+					     [proplists:get_value(<<"processed">>, Rest)]));
+	{async, [{<<"info">>, index} | Rest ]} ->
+	    gen_tcp:send(Sock, io_lib:format("~B messages indexed~n",
+					     [proplists:get_value(<<"processed">>, Rest)])),
+	    wait_index_loop(Sock)
     end.
 
 send_sexp_loop(Test_done, Sock) ->
@@ -60,7 +88,7 @@ send_sexp_loop(Test_done, Sock) ->
 		false  -> send_sexp_loop(Test_done, Sock)
 	    end
     end.
-		    
+
 send_sexp(Sexp, Sock) ->
     Serialized = mc_sexp:to_string(Sexp),
     Length = iolist_size(Serialized),

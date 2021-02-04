@@ -29,8 +29,7 @@ accept_loop(LSock) ->
     end.
 
 service(Sock) ->
-    ?LOG_NOTICE("Client connected"),    
-    print_prompt(Sock),
+    ?LOG_NOTICE("Client connected"),
     service_loop([], Sock).
 
 service_loop(Buffer, Sock) ->
@@ -42,16 +41,13 @@ service_loop(Buffer, Sock) ->
 		    ?LOG_NOTICE("Client disconnected"),
 		    gen_tcp:shutdown(Sock, write)
 	    end;
+	{[], Remain} -> service_loop([Remain], Sock);
 	{[{<<"cmd">>, <<"quit">>} | _], _Remain} ->
 	    ?LOG_NOTICE("Client sent quit"),
 	    gen_tcp:shutdown(Sock, write);
-	{[], Remain} ->
-	    print_prompt(Sock),
-            service_loop([Remain], Sock);
-	{Command, Remain} ->
+	{Command = [{<<"cmd">>, _} | _], Remain} ->
 	    ok = mc_server:async_command(Command),
 	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
-	    print_prompt(Sock),
 	    service_loop([Remain], Sock)
     end.
 
@@ -70,9 +66,6 @@ send_sexp(Sexp, Sock) ->
     Length = iolist_size(Serialized),
     Length_bin = integer_to_binary(Length, 16),
     gen_tcp:send(Sock, [<<16#FE, Length_bin/binary, 16#FF>>, Serialized]).
-
-print_prompt(Sock) ->
-    gen_tcp:send(Sock, ";; welcome to mc(mu 1.2.0)\n;; mu> ").
 
 %% internal functions
 

@@ -69,7 +69,7 @@ move(Id, Maildir, Flags, Newname) ->
 	       if Flags == undefined -> {};
 		  true -> {<<"flags">>, Flags}
 	       end,
-	       {<<"newname">>, Maildir /= undefined and Newname}],
+	       {<<"newname">>, Newname}],
     [Sexp] = mc_server:command(Command),
     Sexp.
 

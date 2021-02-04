@@ -36,11 +36,18 @@ service(Sock) ->
 service_loop(Buffer, Sock) ->
     case mc_cmd:parse(Buffer) of
 	incomplete ->
-	    {ok, Packet} = gen_tcp:recv(Sock, 0),
-	    service_loop(Buffer ++ [Packet], Sock);
+	    case gen_tcp:recv(Sock, 0) of
+		{ok, Packet} -> service_loop(Buffer ++ [Packet], Sock);
+		{error, _Reason} ->
+		    ?LOG_NOTICE("Client disconnected"),
+		    gen_tcp:shutdown(Sock, write)
+	    end;
 	{[{<<"cmd">>, <<"quit">>} | _], _Remain} ->
 	    ?LOG_NOTICE("Client sent quit"),
-	    gen_tcp:shutdown(Sock, read_write);
+	    gen_tcp:shutdown(Sock, write);
+	{[], Remain} ->
+	    print_prompt(Sock),
+            service_loop([Remain], Sock);
 	{Command, Remain} ->
 	    ok = mc_server:async_command(Command),
 	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),

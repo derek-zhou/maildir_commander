@@ -9,7 +9,7 @@
 
 -spec parse(unicode:chardata()) -> incomplete | proplists:proplist().
 parse(Str) ->
-    Trimmed = string:trim(Str, leading, " \t"),
+    Trimmed = string:trim(Str, leading, "\s\t"),
     case string:next_codepoint(Trimmed) of
 	[] -> incomplete;
 	[$\n | Remain] -> {[], Remain};

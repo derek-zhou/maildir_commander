@@ -34,6 +34,7 @@ find(Query, Threads, Sortfield, Reverse, Maxnum) ->
 find(Query, Threads, Sortfield, Reverse, Maxnum, Skip_dups) ->
     find(Query, Threads, Sortfield, Reverse, Maxnum, Skip_dups, default(include_related)).
 
+%% return a list of messages without the message-body
 find(Query, Threads, Sortfield, Reverse, Maxnum, Skip_dups, Include_related) ->
     Command = [{<<"cmd">>, <<"find">>},
 	       {<<"query">>, base64:encode(unicode:characters_to_binary(Query))},
@@ -239,7 +240,9 @@ init_command() ->
      case default(my_addresses) of
 	 [] -> {};
 	 My_addresses -> {<<"my-address">>, lists:join($,, My_addresses)}
-     end].
+     end,
+     {<<"cleanup">>, default(index_cleanup)},
+     {<<"lazy-check">>, default(index_lazy_check)}].
 
 quit_command() ->
     [{<<"cmd">>, <<"quit">>}].

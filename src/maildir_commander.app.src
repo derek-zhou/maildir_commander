@@ -6,6 +6,7 @@
   {applications,
    [kernel,
     stdlib,
+    self_configer,
     sasl,
     gen_smtp
    ]},

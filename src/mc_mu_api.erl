@@ -223,45 +223,30 @@ fun_ending(_) -> fun(_) -> true end.
 
 %% internal functions
 
-default_value(Key, Default) when is_function(Default, 0) ->
-    case application:get_env(?MODULE) of
-	undefined -> Default();
-	{ok, Map} ->
-	    case maps:get(Key, Map, undefined) of
-		undefined -> Default();
-		Value -> Value
-	    end
-    end;
-default_value(Key, Default) ->
-    case application:get_env(?MODULE) of
-	undefined -> Default;
-	{ok, Map} -> maps:get(Key, Map, Default)
-    end.
-    
 default(index_path) ->
-    default_value(index_path, [os:getenv("HOME"), "/Maildir"]);
+    mc_configer:default_value(index_path, os:getenv("HOME") ++ "/Maildir");
 default(my_addresses) ->
-    default_value(my_addresses,
+    mc_configer:default_value(my_addresses,
 		 fun() ->
 			 case file:read_file("/etc/mailname") of
 			     {error, _Reason} -> [];
 			     {ok, Binary} ->
 				 Trimmed = string:trim(Binary, trailing),
 				 User = os:getenv("USER"),
-				 [[User, $@, Trimmed]]
+				 [unicode:characters_to_list([User, $@, Trimmed])]
 			 end
 		 end);
-default(threading) -> default_value(threading, false);
-default(sort_field) -> default_value(sort_field, "subject");
-default(max_num) -> default_value(max_num, 1024);
-default(reverse_sort) -> default_value(reverse_sort, false); 
-default(skip_dups) -> default_value(skip_dups, false); 
-default(include_related) -> default_value(include_related, false); 
-default(move_new_name) -> default_value(move_new_name, false); 
-default(extract_images) -> default_value(extract_images, false); 
-default(extract_encrypted) -> default_value(extract_encrypted, false); 
-default(use_agent) -> default_value(use_agent, true); 
-default(contacts_personal) -> default_value(contacts_personal, true); 
-default(contacts_after) -> default_value(contacts_after, 0);
-default(index_cleanup) -> default_value(index_cleanup, true);
-default(index_lazy_check) -> default_value(index_lazy_check, false). 
+default(threading) -> mc_configer:default_value(threading, false);
+default(sort_field) -> mc_configer:default_value(sort_field, "subject");
+default(max_num) -> mc_configer:default_value(max_num, 1024);
+default(reverse_sort) -> mc_configer:default_value(reverse_sort, false);
+default(skip_dups) -> mc_configer:default_value(skip_dups, false);
+default(include_related) -> mc_configer:default_value(include_related, false);
+default(move_new_name) -> mc_configer:default_value(move_new_name, false);
+default(extract_images) -> mc_configer:default_value(extract_images, false);
+default(extract_encrypted) -> mc_configer:default_value(extract_encrypted, false);
+default(use_agent) -> mc_configer:default_value(use_agent, true);
+default(contacts_personal) -> mc_configer:default_value(contacts_personal, true);
+default(contacts_after) -> mc_configer:default_value(contacts_after, 0);
+default(index_cleanup) -> mc_configer:default_value(index_cleanup, true);
+default(index_lazy_check) -> mc_configer:default_value(index_lazy_check, false).

@@ -58,6 +58,16 @@ service_loop(Buffer, Sock) ->
 	    gen_tcp:shutdown(Sock, write)
     end.
 
+issue_command(<<"contacts">>, _Args) ->
+    case maildir_commander:contacts() of
+	{error, Message} ->
+	    io_lib:format("error: ~ts~n", [Message]);
+	{ok, Contacts} ->
+	    lists:map(
+	      fun({Name, Mail}) ->
+		      unicode:characters_to_binary(io_lib:format("~ts <~ts>~n", [Name, Mail]))
+	      end, Contacts)
+    end;
 issue_command(<<"index">>, _Args) ->
     case maildir_commander:index() of
 	{error, Message} ->
@@ -97,11 +107,5 @@ send_sexp(Sexp, Sock) ->
 
 %% internal functions
 
-default_value(Key, Default) ->
-    case application:get_env(?MODULE) of
-	undefined -> Default;
-	{ok, Map} -> maps:get(Key, Map, Default)
-    end.
-
 default(socket_file) ->
-    default_value(socket_file, [os:getenv("HOME"), "/.mc_server_sock"]).
+    mc_configer:default_value(socket_file, os:getenv("HOME") ++ "/.mc_server_sock").

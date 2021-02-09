@@ -49,7 +49,8 @@ service_loop(Buffer, Sock) ->
 	    ok = mc_server:command(Command),
 	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
 	    service_loop([Remain], Sock);
-	{[{<<"cmdx">>, <<"index">>} | _], Remain} ->
+	%% index is special because we need to print progress
+	{[{<<"cmdx">>, <<"index">>}], Remain} ->
 	    ok = mc_server:command(mc_mu_api:index()),
 	    wait_index_loop(Sock),
 	    service_loop([Remain], Sock);
@@ -74,6 +75,39 @@ issue_command(<<"index">>, _Args) ->
 	    io_lib:format("error: ~ts~n", [Message]);
 	{ok, Num} ->
 	    io_lib:format("~B messages indexed~n", [Num])
+    end;
+issue_command(<<"find">>, [{<<"query">>, Query}]) ->
+    case maildir_commander:find(Query) of
+	{error, Message} ->
+	    io_lib:format("error: ~ts~n", [Message]);
+	{ok, Mails} ->
+	    lists:map(fun(Each) -> format_mail_header(Each, 0) end, Mails)
+    end;
+issue_command(<<"findx">>, [{<<"query">>, Query}]) ->
+    case maildir_commander:find(Query, true) of
+	{error, Message} ->
+	    io_lib:format("error: ~ts~n", [Message]);
+	{ok, Mails} ->
+	    lists:map(fun(Each) -> format_mail_header(Each, 0) end, Mails)
+    end.
+    
+format_mail_header(Mail, Level) ->
+    Date = proplists:get_value(date, Mail),
+    From = proplists:get_value(from, Mail),
+    Subject = proplists:get_value(subject, Mail),
+    Str = io_lib:format("~s~ts ~ts <~ts> ~ts~n",
+			[ lists:duplicate(Level*2, $\s),
+			  calendar:system_time_to_rfc3339(Date),
+			  hd(From), tl(From), Subject ]),
+    Data = unicode:characters_to_binary(Str),
+    case proplists:get_value(children, Mail, []) of
+	[] -> Data;
+	Children ->
+	    [Data |
+	     lists:map(
+	       fun(Each) ->
+		       format_mail_header(Each, Level + 1)
+	       end, Children)]
     end.
 
 wait_index_loop(Sock) ->

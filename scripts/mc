@@ -2,14 +2,25 @@
 
 case $1 in
     server)
-	exec socat UNIX-CONNECT:$HOME/.mc_server_sock -
+	exec socat -t 0 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
     index)
-	echo "cmd:index path:$HOME/Maildir/
-cmd:quit
-" | socat UNIX-CONNECT:$HOME/.mc_server_sock - > /dev/null
+	echo "cmdx:index
+" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
+	;;
+    contacts)
+	echo "cmdx:contacts
+" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
+	;;
+    find)
+	echo "cmdx:find query:\"$2\"
+" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
+	;;
+    findx)
+	echo "cmdx:findx query:\"$2\"
+" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
     *)
-	echo "the only supported sub commands are server for now"
+	echo "the only supported sub commands are server, index, contacts, find and findx for now"
 	;;
 esac

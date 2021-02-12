@@ -41,9 +41,7 @@ kill(#mc_state{port = Port}) ->
     port_command(Port, mc_cmd:to_string(Command)),
     %% we do not care what the server has to say in quit; and it is not reliable anyway.
     %% however we want to wait until the server close the port, don't sigpipe the server
-    ok = flush_port(Port),
-    ?LOG_NOTICE("mu server quited"),
-    ok.
+    flush_port(Port).
 
 cold_boot() ->
     Data = #mc_state{port = Port} = boot(),

@@ -28,25 +28,14 @@ index_loop() ->
 %% or {error, Msg} where Msg is a binary string for the error
 -spec add(string()) -> {ok, integer()} | {error, binary()}.
 add(Path) ->
-    Dir = mc_mu_api:default(index_path),
-    case get_maildir(Path, Dir) of
-	undefined -> {error, <<"Not in maildir">>};
-	Maildir ->
+    case mc_mender:maildir_parse(Path) of
+	{error, Reason} -> {error, Reason};
+	{cur, Maildir, _Basename} ->
 	    %% the sent function name is from mu. add return too much crap
 	    Command = mc_mu_api:sent(Path, Maildir),
 	    mc_server:command(Command),
-	    add_loop()
-    end.
-
-get_maildir(Path, Dir) ->
-    case string:prefix(Path, Dir) of
-	nomatch -> undefined;
-	Remain ->
-	    case string:split(Remain, "/cur/") of
-		[_File] -> undefined;
-		[[], _File] -> "/";
-		[Maildir, _File] -> Maildir
-	    end
+	    add_loop();
+	{_Type, _Maildir, _Basename} -> {error, <<"Not in cur sub dir">>}
     end.
 
 add_loop() ->
@@ -82,7 +71,7 @@ find(Query) -> find(Query, false).
 
 -spec find(string(), boolean()) ->
 	  {ok, [proplist:proplist()]} | {error, binary()}.
-find(Query, Threads) -> find(Query, Threads, mc_mu_api:default(sort_field)).
+find(Query, Threads) -> find(Query, Threads, default(sort_field)).
 
 -spec find(string(), boolean(), string()) ->
 	  {ok, [proplist:proplist()]} | {error, binary()}.
@@ -92,7 +81,7 @@ find(Query, Threads, Sort_field) -> find(Query, Threads, Sort_field, false).
 	  {ok, [proplist:proplist()]} | {error, binary()}.
 find(Query, Threads, Sort_field, Reverse_sort) ->
     Command = mc_mu_api:find(Query, Threads, Sort_field, Reverse_sort,
-			     mc_mu_api:default(max_num), Threads, Threads),
+			     default(max_num), Threads, Threads),
     ok = mc_server:command(Command),
     find_loop([]).
 
@@ -121,41 +110,32 @@ parse_thread_level(Headers) ->
 	undefined -> {0, false, false, false};
 	Thread ->
 	    Level = proplists:get_value(<<"level">>, Thread, 0),
-	    Duplicate = proplists:get_value(<<"duplicate">>, Thread, false),
-	    First_child = proplists:get_value(<<"first-child">>, Thread, false),
-	    Empty_parent = proplists:get_value(<<"empty-parent">>, Thread, false),
+	    Duplicate = proplists:get_value(<<"duplicate">>, Thread),
+	    First_child = proplists:get_value(<<"first-child">>, Thread),
+	    Empty_parent = proplists:get_value(<<"empty-parent">>, Thread),
 	    %% only make dummy parent when I am the first of orphan siblings
 	    {Level, Duplicate == t, First_child == t, Empty_parent == t}
     end.
 
 parse_mail_headers(Headers) ->
-    Subject = proplists:get_value(<<"subject">>, Headers, <<>>),
-    %% from is a list of email addresses. Pick the first one
-    From = case proplists:get_value(<<"from">>, Headers) of
-	       undefined -> undefined;
-	       [] -> [<<>> | <<>>];
-	       [Add | _] -> Add
-	   end,
-    To = proplists:get_value(<<"to">>, Headers, []),
-    Cc = proplists:get_value(<<"cc">>, Headers, []),
-    Bcc = proplists:get_value(<<"bcc">>, Headers, []),
-    Date =
-	case proplists:get_value(<<"date">>, Headers) of
-	    undefined -> 0;
-	    [H, L | _ ] -> H*65536+L
-	end,
-    Size = proplists:get_value(<<"size">>, Headers, 0),
-    Path = proplists:get_value(<<"path">>, Headers),
-    Flags = proplists:get_value(<<"flags">>, Headers, []),
-    [{subject, Subject},
-     {from, From},
-     {to, To},
-     {cc, Cc},
-     {bcc, Bcc},
-     {date, Date},
-     {size, Size},
-     {path, Path},
-     {flags, Flags} ].
+    [{subject, proplists:get_value(<<"subject">>, Headers, <<>>)},
+     %% from is a list of email addresses. Pick the first one
+     {from, case proplists:get_value(<<"from">>, Headers) of
+		undefined -> undefined;
+		[] -> [<<>> | <<>>];
+		[Add | _] -> Add
+	    end },
+     {to, proplists:get_value(<<"to">>, Headers, [])},
+     {cc, proplists:get_value(<<"cc">>, Headers, [])},
+     {bcc, proplists:get_value(<<"bcc">>, Headers, [])},
+     {date, case proplists:get_value(<<"date">>, Headers) of
+		undefined -> 0;
+		[H, L | _ ] -> H*65536+L
+	    end},
+     {size, proplists:get_value(<<"size">>, Headers, 0)},
+     {msgid, proplists:get_value(<<"msgid">>, Headers)},
+     {path, proplists:get_value(<<"path">>, Headers)},
+     {flags, proplists:get_value(<<"flags">>, Headers, []) } ].
 
 dummy_parent() ->
     [{subject, <<>>},
@@ -165,6 +145,7 @@ dummy_parent() ->
      {bcc, []},
      {date, 0},
      {size, 0},
+     {msgid, undefined},
      {path, undefined},
      {flags, []} ].
 
@@ -189,3 +170,6 @@ reverse_mails(List) ->
 reverse_children([{children, Children} | Rest]) ->
     [{children, reverse_mails(Children)} | Rest];
 reverse_children(List) when is_list(List) -> List.
+
+default(sort_field) -> mc_configer:default_value(sort_field, "subject");
+default(max_num) -> mc_configer:default_value(max_num, 1024).

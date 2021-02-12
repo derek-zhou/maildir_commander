@@ -17,7 +17,8 @@ init() ->
     file:delete(File),
     {ok, LSock} = gen_tcp:listen(0, [binary, {packet, 0}, {active, false},
 				     {ip, {local, File}}]),
-    accept_loop(LSock).
+    accept_loop(LSock),
+    exit(shutdown).
 
 accept_loop(LSock) ->
     case gen_tcp:accept(LSock) of

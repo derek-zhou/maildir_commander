@@ -15,7 +15,7 @@
 	 quit/0,
 	 contacts/0, contacts/1, contacts/2,
 	 index/0, index/1, index/2, index/3, index/4 ]).
--export([fun_ending/1, default/1 ]).
+-export([fun_ending/1 ]).
 
 find(Query) ->
     find(Query, default(threading)).

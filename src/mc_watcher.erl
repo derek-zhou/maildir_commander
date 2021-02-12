@@ -31,7 +31,7 @@ watch_loop(Buffer, From, To, Port) ->
 		{Port, {data, Binary}} ->
 		    watch_loop(<<Remain/binary, Binary/binary>>, From, To, Port);
 		{'EXIT', Port, _Reason} -> ok;
-		{'EXIT', _From, Reason} ->
+		{'EXIT', _From, _Reason} ->
 		    kill(Port),
 		    watch_loop(Remain, From, To, Port);
 		Msg ->
@@ -66,7 +66,7 @@ parse_message(Buffer) ->
 	{Leading, Trailing} ->
 	    Remain = string:trim(Trailing, leading, "\n"),
 	    case string:split(Leading, " ", all) of
-		[_Dir, _Event, File] -> {File, Remain};
+		[_Dir, _Event, File] -> {unicode:characters_to_list(File), Remain};
 		_  ->
 		    ?LOG_WARNING("Unrecognized text: ~ts", [Leading]),
 		    {incomplete, Remain}

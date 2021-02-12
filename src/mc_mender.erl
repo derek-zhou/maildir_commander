@@ -70,7 +70,7 @@ maildir_type(<<"/new/">>) -> new.
 %% private functions
 maildir_commit(Binary, Maildir, Basename, Original) ->
     Tmp = maildir_path(Maildir, tmp, Basename),
-    case file:write_path(Binary, Tmp) of
+    case file:write_file(Binary, Tmp) of
 	{error, Reason} -> {error, Reason};
 	ok ->
 	    case maildir_path(Maildir, cur, Basename) of

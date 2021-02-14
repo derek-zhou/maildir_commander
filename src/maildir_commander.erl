@@ -64,67 +64,40 @@ contacts() ->
 	{async, [{<<"info">>, index} | _ ]} -> index_loop()
     end.
 
-%% return all mail matching the query. return a tree of docids, a map from docid to messages,
-%% and a map from docid to parent docid
--spec find(string()) ->
-	  {ok, list(), map(), map()} | {error, binary()}.
+%% return all mail matching the query. return a tree of docids, and a map from docid to mail
+-spec find(string()) -> {ok, list(), map()} | {error, binary()}.
 find(Query) -> find(Query, false).
 
--spec find(string(), boolean()) ->
-	  {ok, [proplist:proplist()]} | {error, binary()}.
+-spec find(string(), boolean()) -> {ok, list(), map()} | {error, binary()}.
 find(Query, Threads) -> find(Query, Threads, default(sort_field)).
 
--spec find(string(), boolean(), string()) ->
-	  {ok, [proplist:proplist()]} | {error, binary()}.
+-spec find(string(), boolean(), string()) -> {ok, list(), map()} | {error, binary()}.
 find(Query, Threads, Sort_field) -> find(Query, Threads, Sort_field, false).
 
--spec find(string(), boolean(), string(), boolean()) ->
-	  {ok, [proplist:proplist()]} | {error, binary()}.
-find(Query, true, Sort_field, Reverse_sort) ->
-    Command = mc_mu_api:find(Query, true, Sort_field, Reverse_sort,
-			     default(max_num), true, true),
+-spec find(string(), boolean(), string(), boolean()) -> {ok, list(), map()} | {error, binary()}.
+find(Query, Threads, Sort_field, Reverse_sort) ->
+    Command = mc_mu_api:find(Query, Threads, Sort_field, Reverse_sort,
+			     default(max_num), Threads, Threads),
     ok = mc_server:command(Command),
-    find_loop([], #{}, #{});
-find(Query, false, Sort_field, Reverse_sort) ->
-    Command = mc_mu_api:find(Query, false, Sort_field, Reverse_sort),
-    ok = mc_server:command(Command),
-    case find_loop([], #{}, #{}) of
-	{error, Msg} -> {error, Msg};
-	{ok, List, Mails, #{}} -> {ok, List, Mails}
-    end.
+    find_loop([], #{}).
 
-find_loop(Tree, Mails, Parents) ->
+find_loop(Tree, Mails) ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} ->
 	    {error, Msg};
 	{async, [{<<"erase">>, t} | _ ]} ->
-	    find_loop([], #{}, #{});
+	    find_loop([], #{});
 	{async, [{<<"found">>, _Total} | _ ]} ->
-	    {ok, reverse_tree(Tree), Mails, Parents};
-	{async, [{<<"docid">>, Docid} | Headers ]} ->
-	    Mail = parse_mail_headers(Headers),
-	    {Level, Should_patch} = parse_thread_level(Headers),
-	    %% for first orphan we have to attach a dummy parent
-	    Patched = if Should_patch -> merge_into_tree(undefined, Level - 1, Tree);
-			 true -> Tree
-		      end,
-	    find_loop(merge_into_tree(Docid, Level, Patched),
-		      maps:put(Docid, Mail, Mails),
-		      case parent_in_tree(Level, undefined, Patched) of
-			  undefined -> Parents;
-			  Parent -> maps:put(Docid, Parent, Parents)
-		      end)
+	    {ok, mc_tree:reverse(Tree), Mails};
+	{async, [{<<"docid">>, Docid} | Headers ]} when is_integer(Docid) ->
+	    find_loop(mc_tree:append(Docid, parse_thread_level(Headers), Tree),
+		      maps:put(Docid, parse_mail_headers(Headers), Mails))
     end.
 
 parse_thread_level(Headers) ->
     case proplists:get_value(<<"thread">>, Headers) of
-	undefined -> {0, false};
-	Thread ->
-	    Level = proplists:get_value(<<"level">>, Thread, 0),
-	    First_child = proplists:get_value(<<"first-child">>, Thread),
-	    Empty_parent = proplists:get_value(<<"empty-parent">>, Thread),
-	    %% only make dummy parent when I am the first of orphan siblings
-	    {Level, (First_child == t) and (Empty_parent == t)}
+	undefined -> 0;
+	Thread -> proplists:get_value(<<"level">>, Thread, 0)
     end.
 
 parse_mail_headers(Headers) ->
@@ -146,24 +119,6 @@ parse_mail_headers(Headers) ->
        msgid => proplists:get_value(<<"message-id">>, Headers),
        path => proplists:get_value(<<"path">>, Headers),
        flags => proplists:get_value(<<"flags">>, Headers, []) }.
-
-merge_into_tree(Docid, 0, Tree) -> [Docid | Tree];
-merge_into_tree(Docid, _N, []) -> [Docid];
-merge_into_tree(Docid, N, [{Pid, Children} | Tail]) ->
-    [{Pid, merge_into_tree(Docid, N-1, Children)} | Tail];
-merge_into_tree(Docid, _N, [Pid | Tail]) -> [{Pid, [Docid]} | Tail].
-
-parent_in_tree(0, Parent, _Tree) -> Parent;
-parent_in_tree(_N, Parent, []) -> Parent;
-parent_in_tree(N, _Parent, [{Pid, Children} | _Tail]) ->
-    parent_in_tree(N-1, Pid, Children);
-parent_in_tree(_N, _Parent, [Pid | _Tail]) -> Pid.
-
-%% rebverse the order of a Tree
-reverse_tree(Tree) -> lists:map(fun reverse_node/1, lists:reverse(Tree)).
-
-reverse_node({Docid, Children}) -> {Docid, reverse_tree(Children)};
-reverse_node(Docid) -> Docid.
 
 default(sort_field) -> mc_configer:default_value(sort_field, "subject");
 default(max_num) -> mc_configer:default_value(max_num, 1024).

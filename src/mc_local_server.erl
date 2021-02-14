@@ -78,30 +78,16 @@ issue_command(<<"index">>, _Args) ->
 	    io_lib:format("~B messages indexed~n", [Num])
     end;
 issue_command(<<"find">>, [{<<"query">>, Query}]) ->
-    case maildir_commander:find(Query) of
-	{error, Message} ->
-	    io_lib:format("error: ~ts~n", [Message]);
-	{ok, List, Mails} -> print_tree(List, Mails, 0)
-    end;
+    print_tree(maildir_commander:find(Query));
 issue_command(<<"findx">>, [{<<"query">>, Query}]) ->
-    case maildir_commander:find(Query, true) of
-	{error, Message} ->
-	    io_lib:format("error: ~ts~n", [Message]);
-	{ok, Tree, Mails, _Parents} -> print_tree(Tree, Mails, 0)
-    end.
+    print_tree(maildir_commander:find(Query, true)).
 
-print_tree(Tree, Mails, Level) ->
-    lists:map(
-      fun({undefined, Children}) ->
-	      [print_dummy(Level) |
-	       print_tree(Children, Mails, Level + 1) ];
-	 ({Docid, Children}) ->
-	      [format_mail_header(maps:get(Docid, Mails), Level) |
-	       print_tree(Children, Mails, Level + 1) ];
-	 (undefined) -> <<"">>;
-	 (Docid) ->
-	      format_mail_header(maps:get(Docid, Mails), Level)
-      end, Tree).
+print_tree({error, Message}) ->
+    io_lib:format("error: ~ts~n", [Message]);
+print_tree({ok, List, Mails}) ->
+    mc_tree:flatmap(fun(Docid, Level) ->
+			    format_mail_header(maps:get(Docid, Mails), Level)
+		    end, List).
 
 format_mail_header(#{date := Date, from := From, subject := Subject}, Level) ->
     unicode:characters_to_binary(
@@ -109,10 +95,6 @@ format_mail_header(#{date := Date, from := From, subject := Subject}, Level) ->
 		    [ lists:duplicate(Level*2, $\s),
 		      calendar:system_time_to_rfc3339(Date),
 		      hd(From), tl(From), Subject ])).
-
-print_dummy(Level) ->
-    unicode:characters_to_binary(lists:duplicate(Level*2, $\s) ++
-				     "**Message not available**\n").
 
 wait_index_loop(Sock) ->
     receive

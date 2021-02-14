@@ -64,9 +64,10 @@ contacts() ->
 	{async, [{<<"info">>, index} | _ ]} -> index_loop()
     end.
 
-%% return all mail matching the query. no threading. return a list of proplist for each mail
+%% return all mail matching the query. return a tree of docids, a map from docid to messages,
+%% and a map from docid to parent docid
 -spec find(string()) ->
-	  {ok, [proplists:proplist()]} | {error, binary()}.
+	  {ok, list(), map(), map()} | {error, binary()}.
 find(Query) -> find(Query, false).
 
 -spec find(string(), boolean()) ->
@@ -79,97 +80,90 @@ find(Query, Threads, Sort_field) -> find(Query, Threads, Sort_field, false).
 
 -spec find(string(), boolean(), string(), boolean()) ->
 	  {ok, [proplist:proplist()]} | {error, binary()}.
-find(Query, Threads, Sort_field, Reverse_sort) ->
-    Command = mc_mu_api:find(Query, Threads, Sort_field, Reverse_sort,
-			     default(max_num), Threads, Threads),
+find(Query, true, Sort_field, Reverse_sort) ->
+    Command = mc_mu_api:find(Query, true, Sort_field, Reverse_sort,
+			     default(max_num), true, true),
     ok = mc_server:command(Command),
-    find_loop([]).
+    find_loop([], #{}, #{});
+find(Query, false, Sort_field, Reverse_sort) ->
+    Command = mc_mu_api:find(Query, false, Sort_field, Reverse_sort),
+    ok = mc_server:command(Command),
+    case find_loop([], #{}, #{}) of
+	{error, Msg} -> {error, Msg};
+	{ok, List, Mails, #{}} -> {ok, List, Mails}
+    end.
 
-find_loop(List) ->
+find_loop(Tree, Mails, Parents) ->
     receive
-	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"erase">>, t} | _ ]} -> find_loop([]);
-	{async, [{<<"found">>, _Total} | _ ]} -> {ok, reverse_mails(List)};
-	{async, [{<<"docid">>, _Docid} | Headers ]} ->
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} ->
+	    {error, Msg};
+	{async, [{<<"erase">>, t} | _ ]} ->
+	    find_loop([], #{}, #{});
+	{async, [{<<"found">>, _Total} | _ ]} ->
+	    {ok, reverse_tree(Tree), Mails, Parents};
+	{async, [{<<"docid">>, Docid} | Headers ]} ->
 	    Mail = parse_mail_headers(Headers),
-	    {Level, Duplicate, First_child, Empty_parent} = parse_thread_level(Headers),
+	    {Level, Should_patch} = parse_thread_level(Headers),
 	    %% for first orphan we have to attach a dummy parent
-	    Patched = if First_child and Empty_parent ->
-			      merge_mail_into_tree(dummy_parent(), Level - 1, List);
-			 true -> List
+	    Patched = if Should_patch -> merge_into_tree(undefined, Level - 1, Tree);
+			 true -> Tree
 		      end,
-	    %% remove dups. There could be dups even if we specified skip-dups
-	    Inserted = if Duplicate -> Patched;
-			  true -> merge_mail_into_tree(Mail, Level, Patched)
-		       end,
-	    find_loop(Inserted)
+	    find_loop(merge_into_tree(Docid, Level, Patched),
+		      maps:put(Docid, Mail, Mails),
+		      case parent_in_tree(Level, undefined, Patched) of
+			  undefined -> Parents;
+			  Parent -> maps:put(Docid, Parent, Parents)
+		      end)
     end.
 
 parse_thread_level(Headers) ->
     case proplists:get_value(<<"thread">>, Headers) of
-	undefined -> {0, false, false, false};
+	undefined -> {0, false};
 	Thread ->
 	    Level = proplists:get_value(<<"level">>, Thread, 0),
-	    Duplicate = proplists:get_value(<<"duplicate">>, Thread),
 	    First_child = proplists:get_value(<<"first-child">>, Thread),
 	    Empty_parent = proplists:get_value(<<"empty-parent">>, Thread),
 	    %% only make dummy parent when I am the first of orphan siblings
-	    {Level, Duplicate == t, First_child == t, Empty_parent == t}
+	    {Level, (First_child == t) and (Empty_parent == t)}
     end.
 
 parse_mail_headers(Headers) ->
-    [{subject, proplists:get_value(<<"subject">>, Headers, <<>>)},
-     %% from is a list of email addresses. Pick the first one
-     {from, case proplists:get_value(<<"from">>, Headers) of
-		undefined -> undefined;
-		[] -> [<<>> | <<>>];
-		[Add | _] -> Add
-	    end },
-     {to, proplists:get_value(<<"to">>, Headers, [])},
-     {cc, proplists:get_value(<<"cc">>, Headers, [])},
-     {bcc, proplists:get_value(<<"bcc">>, Headers, [])},
-     {date, case proplists:get_value(<<"date">>, Headers) of
-		undefined -> 0;
-		[H, L | _ ] -> H*65536+L
-	    end},
-     {size, proplists:get_value(<<"size">>, Headers, 0)},
-     {msgid, proplists:get_value(<<"msgid">>, Headers)},
-     {path, proplists:get_value(<<"path">>, Headers)},
-     {flags, proplists:get_value(<<"flags">>, Headers, []) } ].
+    #{ subject => proplists:get_value(<<"subject">>, Headers, <<>>),
+       %% from is a list of email addresses. Pick the first one
+       from => case proplists:get_value(<<"from">>, Headers) of
+		   undefined -> undefined;
+		   [] -> [<<>> | <<>>];
+		   [Add | _] -> Add
+	       end,
+       to => proplists:get_value(<<"to">>, Headers, []),
+       cc => proplists:get_value(<<"cc">>, Headers, []),
+       bcc => proplists:get_value(<<"bcc">>, Headers, []),
+       date => case proplists:get_value(<<"date">>, Headers) of
+		   undefined -> 0;
+		   [H, L | _ ] -> H*65536+L
+	       end,
+       size => proplists:get_value(<<"size">>, Headers, 0),
+       msgid => proplists:get_value(<<"message-id">>, Headers),
+       path => proplists:get_value(<<"path">>, Headers),
+       flags => proplists:get_value(<<"flags">>, Headers, []) }.
 
-dummy_parent() ->
-    [{subject, <<>>},
-     {from, [<<>> | <<>>]},
-     {to, []},
-     {cc, []},
-     {bcc, []},
-     {date, 0},
-     {size, 0},
-     {msgid, undefined},
-     {path, undefined},
-     {flags, []} ].
+merge_into_tree(Docid, 0, Tree) -> [Docid | Tree];
+merge_into_tree(Docid, _N, []) -> [Docid];
+merge_into_tree(Docid, N, [{Pid, Children} | Tail]) ->
+    [{Pid, merge_into_tree(Docid, N-1, Children)} | Tail];
+merge_into_tree(Docid, _N, [Pid | Tail]) -> [{Pid, [Docid]} | Tail].
 
-merge_mail_into_tree(Mail, 0, List) -> [Mail | List];
-merge_mail_into_tree(Mail, N, [])
-  when is_integer(N) andalso N > 0 ->
-    ?LOG_WARNING("Cannot merge message ~ts into the tree",
-		 [proplists:get_value(path, Mail, <<>>)]),
-    [Mail];
-merge_mail_into_tree(Mail, N, [[{children, Children} | Head] | Tail])
-  when is_integer(N) andalso N > 0 ->
-    [[{children, merge_mail_into_tree(Mail, N-1, Children)} | Head] | Tail];
-merge_mail_into_tree(Mail, N, [Head | Tail])
-  when is_integer(N) andalso N > 0 ->
-    merge_mail_into_tree(Mail, N, [[{children, []} | Head] | Tail]).
+parent_in_tree(0, Parent, _Tree) -> Parent;
+parent_in_tree(_N, Parent, []) -> Parent;
+parent_in_tree(N, _Parent, [{Pid, Children} | _Tail]) ->
+    parent_in_tree(N-1, Pid, Children);
+parent_in_tree(_N, _Parent, [Pid | _Tail]) -> Pid.
 
-%% rebverse the order of a list of mails, aldo fixup each mail
-reverse_mails(List) ->
-    lists:map(fun reverse_children/1, lists:reverse(List)).
+%% rebverse the order of a Tree
+reverse_tree(Tree) -> lists:map(fun reverse_node/1, lists:reverse(Tree)).
 
-%% reverse children of a mail to the original order
-reverse_children([{children, Children} | Rest]) ->
-    [{children, reverse_mails(Children)} | Rest];
-reverse_children(List) when is_list(List) -> List.
+reverse_node({Docid, Children}) -> {Docid, reverse_tree(Children)};
+reverse_node(Docid) -> Docid.
 
 default(sort_field) -> mc_configer:default_value(sort_field, "subject");
 default(max_num) -> mc_configer:default_value(max_num, 1024).

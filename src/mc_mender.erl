@@ -2,7 +2,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/3, maildir_path/2, maildir_path/3, maildir_parse/1]).
+-export([mend/3, leaf_mend/3, scrub_mime/2, maildir_path/2, maildir_path/3, maildir_parse/1]).
 
 %% mend an email from Path by chenging its contents using the closure How,
 %% then put it into Maildir
@@ -20,6 +20,37 @@ mend(How, Path, Maildir) ->
 		{ok, New_path} -> maildir_commander:add(New_path)
 	    end
     end.
+
+%% mend only the leaf mime parts
+
+-spec leaf_mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
+leaf_mend(How, Path, Maildir) ->
+    mend(fun (Mime) -> leaf_mend(How, Mime) end, Path, Maildir).
+
+leaf_mend(How, Mime = {_Type, _SubType, _Headers, _Parameters, Body}) when is_binary(Body) ->
+    How(Mime);
+leaf_mend(How, {Type, SubType, Headers, Parameters, Content}) when is_tuple(Content) ->
+    {Type, SubType, Headers, Parameters, leaf_mend(How, Content)};
+leaf_mend(How, {Type, SubType, Headers, Parameters, Contents}) when is_list(Contents) ->
+    {Type, SubType, Headers, Parameters,
+     lists:map(fun(Content) -> leaf_mend(How, Content) end, Contents)}.
+
+%% scrub all attachments
+
+-spec scrub_mime(string(), string()) -> {ok, integer()} | {error, binary()}.
+scrub_mime(Path, Maildir) ->
+    leaf_mend(fun scrub_mime/1, Path, Maildir).
+
+%% all text shall be kept
+scrub_mime({<<"text">>, SubType, Headers, Parameters, Body}) ->
+    {<<"text">>, SubType, Headers, Parameters, Body};
+%% all inline or attachments shall be removed
+scrub_mime({Type, SubType, Headers, Parameters = #{disposition := <<"inline">>}, _Body}) ->
+    {Type, SubType, Headers, Parameters, <<>>};
+scrub_mime({Type, SubType, Headers, Parameters = #{disposition := <<"attachment">>}, _Body}) ->
+    {Type, SubType, Headers, Parameters, <<>>};
+%% everything fell through shall be kept
+scrub_mime(Mime) -> Mime.
 
 %% return the full path from mailpath
 -spec maildir_path(string(), atom()) -> string().

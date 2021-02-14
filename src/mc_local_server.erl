@@ -81,35 +81,38 @@ issue_command(<<"find">>, [{<<"query">>, Query}]) ->
     case maildir_commander:find(Query) of
 	{error, Message} ->
 	    io_lib:format("error: ~ts~n", [Message]);
-	{ok, Mails} ->
-	    lists:map(fun(Each) -> format_mail_header(Each, 0) end, Mails)
+	{ok, List, Mails} -> print_tree(List, Mails, 0)
     end;
 issue_command(<<"findx">>, [{<<"query">>, Query}]) ->
     case maildir_commander:find(Query, true) of
 	{error, Message} ->
 	    io_lib:format("error: ~ts~n", [Message]);
-	{ok, Mails} ->
-	    lists:map(fun(Each) -> format_mail_header(Each, 0) end, Mails)
+	{ok, Tree, Mails, _Parents} -> print_tree(Tree, Mails, 0)
     end.
-    
-format_mail_header(Mail, Level) ->
-    Date = proplists:get_value(date, Mail),
-    From = proplists:get_value(from, Mail),
-    Subject = proplists:get_value(subject, Mail),
-    Str = io_lib:format("~s~ts ~ts <~ts> ~ts~n",
-			[ lists:duplicate(Level*2, $\s),
-			  calendar:system_time_to_rfc3339(Date),
-			  hd(From), tl(From), Subject ]),
-    Data = unicode:characters_to_binary(Str),
-    case proplists:get_value(children, Mail, []) of
-	[] -> Data;
-	Children ->
-	    [Data |
-	     lists:map(
-	       fun(Each) ->
-		       format_mail_header(Each, Level + 1)
-	       end, Children)]
-    end.
+
+print_tree(Tree, Mails, Level) ->
+    lists:map(
+      fun({undefined, Children}) ->
+	      [print_dummy(Level) |
+	       print_tree(Children, Mails, Level + 1) ];
+	 ({Docid, Children}) ->
+	      [format_mail_header(maps:get(Docid, Mails), Level) |
+	       print_tree(Children, Mails, Level + 1) ];
+	 (undefined) -> <<"">>;
+	 (Docid) ->
+	      format_mail_header(maps:get(Docid, Mails), Level)
+      end, Tree).
+
+format_mail_header(#{date := Date, from := From, subject := Subject}, Level) ->
+    unicode:characters_to_binary(
+      io_lib:format("~s~ts ~ts <~ts> ~ts~n",
+		    [ lists:duplicate(Level*2, $\s),
+		      calendar:system_time_to_rfc3339(Date),
+		      hd(From), tl(From), Subject ])).
+
+print_dummy(Level) ->
+    unicode:characters_to_binary(lists:duplicate(Level*2, $\s) ++
+				     "**Message not available**\n").
 
 wait_index_loop(Sock) ->
     receive

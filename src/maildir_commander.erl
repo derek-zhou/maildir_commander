@@ -88,7 +88,7 @@ find_loop(Tree, Mails) ->
 	{async, [{<<"erase">>, t} | _ ]} ->
 	    find_loop([], #{});
 	{async, [{<<"found">>, _Total} | _ ]} ->
-	    {ok, mc_tree:reverse(Tree), Mails};
+	    {ok, mc_tree:finalize(Tree), Mails};
 	{async, [{<<"docid">>, Docid} | Headers ]} when is_integer(Docid) ->
 	    find_loop(mc_tree:append(Docid, parse_thread_level(Headers), Tree),
 		      maps:put(Docid, parse_mail_headers(Headers), Mails))

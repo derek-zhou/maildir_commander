@@ -1,9 +1,14 @@
 -module(mc_tree).
 
-%% this module deal with simple tree, each node is a either an Item (leave) or
-%% {Item, [Children]} non-leave
+%% this module deal with simple tree. At building phase it is a list of root nodes
+%% and each node is a either an Item (leave) or {Item, [Children]} non-leave
+%% after finalization, it is a tuple of {Root_list, Children_map, Parent_map}
+%% where Root_list is a list of root Items, Children_map is a map of Item to 
+%% a list of its Children Items, and Parent_map is a map of Item to its Parent item.
 
--export([reverse/1, append/3, flatmap/2, children/2, parent/2]).
+-export([append/3, finalize/1, flatmap/2, children/2, parent/2, graft/3]).
+
+-type mc_tree() :: {list(), map(), map()}.
 
 %% append an Item to the tree at level N
 -spec append(term(), integer(), list()) -> list().
@@ -13,50 +18,93 @@ append(Item, N, [{Pid, Children} | Tail]) ->
     [{Pid, append(Item, N-1, Children)} | Tail];
 append(Item, _N, [Pid | Tail]) -> [{Pid, [Item]} | Tail].
 
-%% rebverse the order of a Tree
--spec reverse(list()) -> list().
-reverse(Tree) -> lists:map(fun reverse_node/1, lists:reverse(Tree)).
+%% finalize a Tree
+-spec finalize(list()) -> mc_tree().
+finalize(Tree) ->
+    { nodes_to_items(Tree),
+      nodes_to_children_map(Tree),
+      nodes_to_parent_map(undefined, Tree) }.
 
 %% return a list that apply Fun(Each, Level) to each item
--spec flatmap(function(), list()) -> list().
-flatmap(Fun, Tree) -> flatmap(Fun, 0, Tree).
+-spec flatmap(function(), mc_tree()) -> list().
+flatmap(Fun, {Root_list, Children_map, _Parent_map}) ->
+    flatmap(Fun, 0, Root_list, Children_map).
 
-%% get the children of an Item. This is O(n)
--spec children(term(), list()) -> list().
-children(_Item, []) -> [];
-children(Item, [{Item, Children} | _ ]) -> Children; 
-children(Item, [Item | _]) -> []; 
-children(Item, [{_Head, H_children} | Tail]) ->
-    case children(Item, H_children) of
-	[] -> children(Item, Tail);
-	List -> List
-    end;
-children(Item, [_Head | Tail]) -> children(Item, Tail).
+%% get the children of an Item
+-spec children(term(), mc_tree()) -> list().
+children(Item, {_Root_list, Children_map, _Parent_map}) ->
+    maps:get(Item, Children_map, []).
     
-%% get the parent of an Item. This is O(n). default is undefined
--spec parent(term(), list()) -> undefined | term().
-parent(Item, Tree) -> parent(Item, undefined, Tree).
+%% get the parent of an Item
+-spec parent(term(), mc_tree()) -> undefined | term().
+parent(Item, {_Root_list, _Children_map, Parent_map}) ->
+    maps:get(Item, Parent_map, undefined).
+
+%% to cut a Item from the tree and connect to another Item as a Child.
+%% First, The Item and its sub tree will be disconnected.
+%% The second Item can be undefined, and the Item will be connected to root
+-spec graft(term(), undefined | term(), mc_tree()) -> list().
+graft(Item, undefined, {Root_list, Children_map, Parent_map}) ->
+    case maps:get(Item, Parent_map, undefined) of
+	undefined -> {Root_list, Children_map, Parent_map};
+	Old_parent ->
+	    { [Item | Root_list],
+	      maps:put( Old_parent,
+		        lists:delete(Item, maps:get(Old_parent, Children_map)),
+		        Children_map ),
+	      maps:remove(Item, Parent_map) }
+    end;
+graft(Item, Parent, {Root_list, Children_map, Parent_map}) ->
+    case maps:get(Item, Parent_map, undefined) of
+	Parent -> {Root_list, Children_map, Parent_map};
+	undefined ->
+	    { lists:delete(Item, Root_list),
+	      maps:put(Parent, [Item | maps:get(Parent, Children_map, [])],
+		       Children_map),
+	      maps:put(Item, Parent, Parent_map) };
+	Old_parent ->
+	    { Root_list,
+	      maps:merge(Children_map,
+			 #{ Old_parent =>
+				lists:delete(Item, maps:get(Old_parent, Children_map)),
+			    Parent =>
+				[Item | maps:get(Parent, Children_map, [])] }),
+	      maps:put(Item, Parent, Parent_map) }
+    end.
 
 %% private functions
-reverse_node({Item, Children}) -> {Item, reverse(Children)};
-reverse_node(Item) -> Item.
+flatmap(_Fun, _Level, [], _Children_map) -> [];
+flatmap(Fun, Level, [Item | Tail], Children_map) ->
+    case maps:get(Item, Children_map, []) of
+	[] -> [Fun(Item, Level) | flatmap(Fun, Level, Tail, Children_map)];
+	Children ->
+	    [[Fun(Item, Level) | flatmap(Fun, Level + 1, Children, Children_map)] |
+	     flatmap(Fun, Level, Tail, Children_map)]
+    end.
 
-flatmap(Fun, Level, Tree) ->
-    lists:map(fun(Each) -> flatmap_node(Fun, Level, Each) end, Tree).
+nodes_to_items(List) -> nodes_to_items([], List).
 
-flatmap_node(Fun, Level, {Item, Children}) ->
-    [Fun(Item, Level) | flatmap(Fun, Level + 1, Children)];
-flatmap_node(Fun, Level, Item) -> Fun(Item, Level).
+nodes_to_items(List, []) -> List;
+nodes_to_items(List, [{Item, _Children} | Tail]) -> nodes_to_items([Item | List], Tail); 
+nodes_to_items(List, [Item | Tail]) -> nodes_to_items([Item | List], Tail). 
 
-parent(_Item, _Default, []) -> undefined;
-parent(Item, Default, [{Item, _Children} | _Tail]) -> Default; 
-parent(Item, Default, [Item | _Tail]) -> Default; 
-parent(Item, Default, [{Head, H_children} | Tail]) ->
-    case parent(Item, Head, H_children) of
-	undefined -> parent(Item, Default, Tail);
-	Parent -> Parent
-    end;
-parent(Item, Default, [_Head | Tail]) -> parent(Item, Default, Tail).
+nodes_to_children_map([]) -> #{};
+nodes_to_children_map([{Item, Children} | Tail]) ->
+    maps:merge( maps:put( Item, nodes_to_items(Children),
+			  nodes_to_children_map(Children) ),
+		nodes_to_children_map(Tail) );
+nodes_to_children_map([_Item | Tail]) ->
+    nodes_to_children_map(Tail).
 
-	    
-    
+nodes_to_parent_map(_Parent, []) -> #{};
+nodes_to_parent_map(undefined, [{Item, Children} | Tail]) ->
+    maps:merge( nodes_to_parent_map(Item, Children),
+		nodes_to_parent_map(undefined, Tail) );
+nodes_to_parent_map(undefined, [_Item | Tail]) ->
+    nodes_to_parent_map(undefined, Tail);
+nodes_to_parent_map(Parent, [{Item, Children} | Tail]) ->
+    maps:merge( maps:put( Item, Parent,
+			  nodes_to_parent_map(Item, Children) ),
+		nodes_to_parent_map(Parent, Tail) );
+nodes_to_parent_map(Parent, [Item | Tail]) ->
+    maps:put(Item, Parent, nodes_to_parent_map(Parent, Tail)).

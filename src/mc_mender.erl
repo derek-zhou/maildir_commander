@@ -2,10 +2,22 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/3, leaf_mend/3, scrub_mime/2, maildir_path/2, maildir_path/3, maildir_parse/1]).
+-export([mend/2, mend/3,
+	 leaf_mend/2, leaf_mend/3,
+	 scrub/1, scrub/2,
+	 graft/2, graft/3]).
+-export([maildir_path/2, maildir_path/3, maildir_parse/1]).
 
 %% mend an email from Path by chenging its contents using the closure How,
 %% then put it into Maildir
+
+-spec mend(function(), string()) -> {ok, integer()} | {error, binary()}.
+mend(How, Path) ->
+    case maildir_parse(Path) of
+	{error, Reason} -> {error, Reason};
+	{Maildir, cur, _Basename} -> mend(How, Path, Maildir);
+	{_Maildir, _Type, _Basename} -> {error, "Not in cur maildir"}
+    end.
 
 -spec mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
 mend(How, Path, Maildir) ->
@@ -23,23 +35,54 @@ mend(How, Path, Maildir) ->
 
 %% mend only the leaf mime parts
 
+-spec leaf_mend(function(), string()) -> {ok, integer()} | {error, binary()}.
+leaf_mend(How, Path) ->
+    mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path).
+
 -spec leaf_mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
 leaf_mend(How, Path, Maildir) ->
-    mend(fun (Mime) -> leaf_mend(How, Mime) end, Path, Maildir).
-
-leaf_mend(How, Mime = {_Type, _SubType, _Headers, _Parameters, Body}) when is_binary(Body) ->
-    How(Mime);
-leaf_mend(How, {Type, SubType, Headers, Parameters, Content}) when is_tuple(Content) ->
-    {Type, SubType, Headers, Parameters, leaf_mend(How, Content)};
-leaf_mend(How, {Type, SubType, Headers, Parameters, Contents}) when is_list(Contents) ->
-    {Type, SubType, Headers, Parameters,
-     lists:map(fun(Content) -> leaf_mend(How, Content) end, Contents)}.
+    mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path, Maildir).
 
 %% scrub all attachments
 
--spec scrub_mime(string(), string()) -> {ok, integer()} | {error, binary()}.
-scrub_mime(Path, Maildir) ->
+-spec scrub(string()) -> {ok, integer()} | {error, binary()}.
+scrub(Path) ->
+    leaf_mend(fun scrub_mime/1, Path).
+
+-spec scrub(string(), string()) -> {ok, integer()} | {error, binary()}.
+scrub(Path, Maildir) ->
     leaf_mend(fun scrub_mime/1, Path, Maildir).
+
+%% graft a message to a new message-id as direct parent. That can be undefined, then
+%% it will have no parent. Since we have the definite parent at hand, we will just clear
+%% references header and use the passwd in message-id for in-reply-to. 
+%% please not we will not touch children of it; if they have good in-reply-to then everything
+%% shall come out ok, which should be the majority cases. If they have something bogus then they
+%% could be orphaned. It is better to limit mending to the minimum.
+
+-spec graft(string(), undefined | string()) -> {ok, integer()} | {error, binary()}.
+graft(Path, Parent_id) ->
+    Pid = case Parent_id of
+	      undefined -> undefined;
+	      _ -> unicode:characters_to_binary([$<, Parent_id, $>])
+	  end,
+    mend(fun({Type, SubType, Headers, Parameters, Content}) ->
+		 {Type, SubType,
+		  set_parent([], Headers, Pid),
+		  Parameters, Content}
+	 end, Path).
+
+-spec graft(string(), undefined | string(), string()) -> {ok, integer()} | {error, binary()}.
+graft(Path, Parent_id, Maildir) ->
+    Pid = case Parent_id of
+	      undefined -> undefined;
+	      _ -> unicode:characters_to_binary([$<, Parent_id, $>])
+	  end,
+    mend(fun({Type, SubType, Headers, Parameters, Content}) ->
+		 {Type, SubType,
+		  set_parent([], Headers, Pid),
+		  Parameters, Content}
+	 end, Path, Maildir).
 
 %% all text shall be kept
 scrub_mime({<<"text">>, SubType, Headers, Parameters, Body}) ->
@@ -71,7 +114,7 @@ maildir_path(Maildir, Type, Basename)
 		   Basename]).
 
 %% infer maildir, type and basename from full path
--spec maildir_parse(string()) -> {error, binary()} | {atom(), string(), string()}.
+-spec maildir_parse(string()) -> {error, binary()} | {string(), atom(), string()}.
 maildir_parse(Path) ->
     Dir = default(index_path),
     case string:prefix(Path, Dir) of
@@ -116,6 +159,28 @@ maildir_commit(Binary, Maildir, Basename, Original) ->
 		    {ok, New_path}
 	    end
     end.
+
+leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Body})
+  when is_binary(Body) ->
+    How({Type, SubType, Headers, Parameters, Body});
+leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Content})
+  when is_tuple(Content) ->
+    {Type, SubType, Headers, Parameters, leaf_mime_mend(How, Content)};
+leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Contents})
+  when is_list(Contents) ->
+    {Type, SubType, Headers, Parameters,
+     lists:map(fun(Content) -> leaf_mime_mend(How, Content) end, Contents)}.
+
+set_parent(List, [], _Pid) ->
+    lists:reverse(List);
+set_parent(List, [{<<"In-Reply-To">>, _} | Tail], undefined) ->
+    set_parent(List, Tail, undefined);
+set_parent(List, [{<<"In-Reply-To">>, _} | Tail], Pid) ->
+    set_parent([{<<"In-Reply-To">>, Pid} | List], Tail, Pid);
+set_parent(List, [{<<"References">>, _} | Tail], Pid) ->
+    set_parent(List, Tail, Pid);
+set_parent(List, [Head | Tail], Pid) ->
+    set_parent([Head | List], Tail, Pid).
 
 default(index_path) ->
     mc_configer:default_value(index_path, os:getenv("HOME") ++ "/Maildir").

@@ -30,12 +30,12 @@ index_loop() ->
 add(Path) ->
     case mc_mender:maildir_parse(Path) of
 	{error, Reason} -> {error, Reason};
-	{cur, Maildir, _Basename} ->
+	{Maildir, cur, _Basename} ->
 	    %% the sent function name is from mu. add return too much crap
 	    Command = mc_mu_api:sent(Path, Maildir),
 	    mc_server:command(Command),
 	    add_loop();
-	{_Type, _Maildir, _Basename} -> {error, <<"Not in cur sub dir">>}
+	{_Maildir, _Type, _Basename} -> {error, <<"Not in cur sub dir">>}
     end.
 
 add_loop() ->

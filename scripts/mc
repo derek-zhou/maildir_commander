@@ -1,26 +1,17 @@
-#!/bin/sh
+#!/bin/bash
 
 case $1 in
+    # to be compatible with mu server
     server)
 	exec socat -t 0 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
-    index)
-	echo "cmdx:index
-" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
-	;;
-    contacts)
-	echo "cmdx:contacts
-" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
-	;;
-    find)
-	echo "cmdx:find query:\"$2\"
-" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
-	;;
-    findx)
-	echo "cmdx:findx query:\"$2\"
-" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
-	;;
     *)
-	echo "the only supported sub commands are server, index, contacts, find and findx for now"
+	# this is force quoting all arguments
+	Command="cmdx:$1"
+	shift
+	for Arg in "$@"; do
+	    Command+=" \"$Arg\""
+	done
+	echo $Command | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
 esac

@@ -2,7 +2,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([parse/1, parse_term/1, to_string/1, escape/1]).
+-export([parse/1, parse_term/1, to_string/1, escape/1, quote_escape/1]).
 
 %% public function.
 
@@ -12,6 +12,9 @@
 -spec escape(unicode:chardata()) -> unicode:chardata().
 escape(Str) ->
     maybe_quote(escape_special(Str)).
+
+quote_escape(Str) ->
+    quote(escape_special(Str)).
 
 escape_special(Str) ->
     string:replace(string:replace(Str, "\\", "\\\\", all), "\"", "\\\"", all).
@@ -170,7 +173,7 @@ parse_regular_list(Str) ->
 -spec to_string(any()) -> unicode:chardata(). 
 to_string(I) when is_integer(I) -> integer_to_binary(I);
 to_string(A) when is_atom(A) -> atom_to_binary(A, utf8);
-to_string(B) when is_binary(B) -> quote(escape_special(B)); 
+to_string(B) when is_binary(B) -> quote_escape(B);
 to_string({K, V}) when is_binary(K) -> [":", K, $\s, to_string(V)];
 to_string([H | T]) when (is_integer(H) orelse is_atom(H) orelse is_binary(H))
 			andalso (is_integer(T) orelse is_atom(T) orelse is_binary(T)) ->

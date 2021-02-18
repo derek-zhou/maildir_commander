@@ -44,17 +44,16 @@ service_loop(Buffer, Sock) ->
 	    end;
 	{[], Remain} -> service_loop([Remain], Sock);
 	{[{<<"cmd">>, <<"quit">>} | _], _Remain} ->
-	    ?LOG_NOTICE("Client sent quit"),
 	    gen_tcp:shutdown(Sock, write);
 	{Command = [{<<"cmd">>, _} | _], Remain} ->
 	    ok = mc_server:command(Command),
 	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
 	    service_loop([Remain], Sock);
 	%% index is special because we need to print progress
-	{[{<<"cmdx">>, <<"index">>}], Remain} ->
+	{[{<<"cmdx">>, <<"index">>}], _Remain} ->
 	    ok = mc_server:command(mc_mu_api:index()),
 	    wait_index_loop(Sock),
-	    service_loop([Remain], Sock);
+	    gen_tcp:shutdown(Sock, write);
 	{[{<<"cmdx">>, Command} | Args], _Remain} ->
 	    gen_tcp:send(Sock, issue_command(Command, Args)),
 	    gen_tcp:shutdown(Sock, write)
@@ -77,10 +76,22 @@ issue_command(<<"index">>, _Args) ->
 	{ok, Num} ->
 	    io_lib:format("~B messages indexed~n", [Num])
     end;
-issue_command(<<"find">>, [{<<"query">>, Query}]) ->
+issue_command(<<"find">>, [Query]) ->
     print_tree(maildir_commander:find(Query));
-issue_command(<<"findx">>, [{<<"query">>, Query}]) ->
-    print_tree(maildir_commander:find(Query, true)).
+issue_command(<<"findx">>, [Query]) ->
+    print_tree(maildir_commander:find(Query, true));
+issue_command(<<"scrub">>, [Path]) ->
+    print_status(maildir_commander:scrub(Path));
+issue_command(<<"graft">>, [Path, Parent]) ->
+    print_status(maildir_commander:graft(Path, Parent));
+issue_command(<<"graft">>, [Path, Parent, Maildir]) ->
+    print_status(maildir_commander:graft(Path, Parent, Maildir));
+issue_command(Command, Args) ->
+    io_lib:format("Syntax error in command: ~ts args: ~p~n", [Command, Args]).
+
+print_status({error, Message}) ->
+    io_lib:format("error: ~ts~n", [Message]);
+print_status({ok, _Docid}) -> "ok\n".
 
 print_tree({error, Message}) ->
     io_lib:format("error: ~ts~n", [Message]);

@@ -5,6 +5,7 @@
 %% public interface of maildir_commander
 
 -export([index/0, add/1, contacts/0,
+	 scrub/1, scrub/2, graft/2, graft/3,
 	 find/1, find/2, find/3, find/4]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
@@ -119,6 +120,36 @@ parse_mail_headers(Headers) ->
        msgid => proplists:get_value(<<"message-id">>, Headers),
        path => proplists:get_value(<<"path">>, Headers),
        flags => proplists:get_value(<<"flags">>, Headers, []) }.
+
+%% scrub all attachments
+
+-spec scrub(string()) -> {ok, integer()} | {error, binary()}.
+scrub(Path) ->
+    mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path).
+
+-spec scrub(string(), string()) -> {ok, integer()} | {error, binary()}.
+scrub(Path, Maildir) ->
+    mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path, Maildir).
+
+%% graft a message to a new message-id as direct parent. That can be undefined, then
+%% it will have no parent. Since we have the definite parent at hand, we will just clear
+%% references header and use the passwd in message-id for in-reply-to. 
+%% please not we will not touch children of it; if they have good in-reply-to then everything
+%% shall come out ok, which should be the majority cases. If they have something bogus then they
+%% could be orphaned. It is better to limit mending to the minimum.
+
+-spec graft(string(), undefined | string()) -> {ok, integer()} | {error, binary()}.
+graft(Path, Parent_id) ->
+    Pid = msgid_str(Parent_id),
+    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path).
+
+-spec graft(string(), undefined | string(), string()) -> {ok, integer()} | {error, binary()}.
+graft(Path, Parent_id, Maildir) ->
+    Pid = msgid_str(Parent_id),
+    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path, Maildir).
+
+msgid_str(undefined) -> undefined;
+msgid_str(Parent_id) -> unicode:characters_to_binary([$<, Parent_id, $>]).
 
 default(sort_field) -> mc_configer:default_value(sort_field, "subject");
 default(max_num) -> mc_configer:default_value(max_num, 1024).

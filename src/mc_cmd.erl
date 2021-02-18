@@ -3,16 +3,28 @@
 -export([parse/1, to_string/1]).
 
 %% mc_cmd are simple command interface used by mu server. The textual representation is:
-%% Key:Value1 Key2:Value2 ...
-%% Keys are predefined string. Values are strings, integers or true or false
-%% internally the cmd is represented as a proplist
+%% [Key:Value | "String"]+ ... 
+%% Keys and strings. Values are strings, integers or true or false. unkeyed Value 
+%% must be quoted string
 
--spec parse(unicode:chardata()) -> incomplete | proplists:proplist().
+%% internally the cmd is represented as a list
+
+-spec parse(unicode:chardata()) -> incomplete | list().
 parse(Str) ->
     Trimmed = string:trim(Str, leading, "\s\t"),
     case string:next_codepoint(Trimmed) of
 	[] -> incomplete;
 	[$\n | Remain] -> {[], Remain};
+	[$" | Remain] ->
+	    case parse_quoted_string(Remain) of
+		incomplete -> incomplete;
+		{Term, Remain2} ->
+		    case parse(Remain2) of
+			incomplete -> incomplete;
+			{List, Remain3} ->
+			    {[unicode:characters_to_binary(Term) | List], Remain3}
+		    end
+	    end;
 	_ ->
 	    case parse_key(Trimmed) of
 		incomplete -> incomplete;
@@ -82,7 +94,7 @@ parse_quoted_string_after_escape(Str) ->
 	    case parse_quoted_string(Tail) of
 		incomplete -> incomplete;
 		{Token, Remain} ->
-	    %% emacs spec only defined escape for return, another slash and double qoute
+		    %% emacs spec only defined escape for return, slash and double qoute
 		    case Head of
 			$\\ -> {[$\\ | Token], Remain};
 			$" -> {[$" | Token], Remain};
@@ -97,8 +109,16 @@ value_string(false) -> <<"false">>;
 value_string(I) when is_integer(I) -> integer_to_binary(I);
 value_string(V) -> mc_sexp:escape(V).
 
--spec to_string(proplists:proplist()) -> unicode:chardata().
-to_string([]) -> "\n";
-to_string([{} | T]) -> to_string(T);
-to_string([{Key, Value} | T]) -> [[Key, $:, value_string(Value), $ ] | to_string(T)].
+-spec to_string(list()) -> unicode:chardata().
+to_string(List) ->
+    lists:join($\s, lists:map(
+		      fun each_to_string/1,
+		      lists:filter(
+			fun(<<>>) -> false;
+			   ({}) -> false;
+			   (_)  -> true
+			end, List)
+		     )) ++ "\n".
 
+each_to_string(Str) when is_binary(Str) -> mc_sexp:quote_escape(Str); 
+each_to_string({Key, Value}) -> [Key, $:, value_string(Value)].

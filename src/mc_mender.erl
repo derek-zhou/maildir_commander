@@ -2,10 +2,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/2, mend/3,
-	 leaf_mend/2, leaf_mend/3,
-	 scrub/1, scrub/2,
-	 graft/2, graft/3]).
+-export([mend/2, mend/3, leaf_mend/2, leaf_mend/3]).
+-export([scrub_mime/1, set_mime_parent/2]).
 -export([maildir_path/2, maildir_path/3, maildir_parse/1]).
 
 %% mend an email from Path by chenging its contents using the closure How,
@@ -42,47 +40,6 @@ leaf_mend(How, Path) ->
 -spec leaf_mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
 leaf_mend(How, Path, Maildir) ->
     mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path, Maildir).
-
-%% scrub all attachments
-
--spec scrub(string()) -> {ok, integer()} | {error, binary()}.
-scrub(Path) ->
-    leaf_mend(fun scrub_mime/1, Path).
-
--spec scrub(string(), string()) -> {ok, integer()} | {error, binary()}.
-scrub(Path, Maildir) ->
-    leaf_mend(fun scrub_mime/1, Path, Maildir).
-
-%% graft a message to a new message-id as direct parent. That can be undefined, then
-%% it will have no parent. Since we have the definite parent at hand, we will just clear
-%% references header and use the passwd in message-id for in-reply-to. 
-%% please not we will not touch children of it; if they have good in-reply-to then everything
-%% shall come out ok, which should be the majority cases. If they have something bogus then they
-%% could be orphaned. It is better to limit mending to the minimum.
-
--spec graft(string(), undefined | string()) -> {ok, integer()} | {error, binary()}.
-graft(Path, Parent_id) ->
-    Pid = case Parent_id of
-	      undefined -> undefined;
-	      _ -> unicode:characters_to_binary([$<, Parent_id, $>])
-	  end,
-    mend(fun({Type, SubType, Headers, Parameters, Content}) ->
-		 {Type, SubType,
-		  set_parent([], Headers, Pid),
-		  Parameters, Content}
-	 end, Path).
-
--spec graft(string(), undefined | string(), string()) -> {ok, integer()} | {error, binary()}.
-graft(Path, Parent_id, Maildir) ->
-    Pid = case Parent_id of
-	      undefined -> undefined;
-	      _ -> unicode:characters_to_binary([$<, Parent_id, $>])
-	  end,
-    mend(fun({Type, SubType, Headers, Parameters, Content}) ->
-		 {Type, SubType,
-		  set_parent([], Headers, Pid),
-		  Parameters, Content}
-	 end, Path, Maildir).
 
 %% all text shall be kept
 scrub_mime({<<"text">>, SubType, Headers, Parameters, Body}) ->
@@ -170,6 +127,9 @@ leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Contents})
   when is_list(Contents) ->
     {Type, SubType, Headers, Parameters,
      lists:map(fun(Content) -> leaf_mime_mend(How, Content) end, Contents)}.
+
+set_mime_parent({Type, SubType, Headers, Parameters, Content}, Pid) ->
+    {Type, SubType, set_parent([], Headers, Pid), Parameters, Content}.
 
 set_parent(List, [], _Pid) ->
     lists:reverse(List);

@@ -81,13 +81,23 @@ issue_command(<<"find">>, [Query]) ->
 issue_command(<<"findx">>, [Query]) ->
     print_tree(maildir_commander:find(Query, true));
 issue_command(<<"scrub">>, [Path]) ->
-    print_status(maildir_commander:scrub(Path));
+    print_status(maildir_commander:scrub(unicode:characters_to_list(Path)));
+issue_command(<<"scrub">>, [Path, Maildir]) ->
+    print_status(maildir_commander:scrub(unicode:characters_to_list(Path),
+					unicode:characters_to_list(Maildir)));
+issue_command(<<"orphan">>, [Path]) ->
+    print_status(maildir_commander:orphan(unicode:characters_to_list(Path)));
+issue_command(<<"orphan">>, [Path, Maildir]) ->
+    print_status(maildir_commander:orphan(unicode:characters_to_list(Path),
+					  unicode:characters_to_list(Maildir)));
 issue_command(<<"graft">>, [Path, Parent]) ->
-    print_status(maildir_commander:graft(Path, Parent));
+    print_status(maildir_commander:graft(unicode:characters_to_list(Path), Parent));
 issue_command(<<"graft">>, [Path, Parent, Maildir]) ->
-    print_status(maildir_commander:graft(Path, Parent, Maildir));
+    print_status(maildir_commander:graft(unicode:characters_to_list(Path),
+					 Parent,
+					 unicode:characters_to_list(Maildir)));
 issue_command(Command, Args) ->
-    io_lib:format("Syntax error in command: ~ts args: ~p~n", [Command, Args]).
+    io_lib:format("Unknown command: ~ts~n", [Command]).
 
 print_status({error, Message}) ->
     io_lib:format("error: ~ts~n", [Message]);

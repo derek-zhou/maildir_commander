@@ -1,10 +1,13 @@
 -module(mc_mender).
 
+%% this module handle direct maildir accessing
+
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/2, mend/3, leaf_mend/2, leaf_mend/3]).
--export([scrub_mime/1, set_mime_parent/2]).
+-export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, scrub_mime/1, set_mime_parent/2]).
 -export([maildir_path/2, maildir_path/3, maildir_parse/1]).
+
+-export([read_text_file/1, write_text_file/2]).
 
 %% mend an email from Path by chenging its contents using the closure How,
 %% then put it into Maildir
@@ -19,7 +22,7 @@ mend(How, Path) ->
 
 -spec mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
 mend(How, Path, Maildir) ->
-    case file:read_file(Path) of
+    case read_text_file(Path) of
 	{error, Reason} -> {error, Reason};
 	{ok, Binary} ->
 	    Mime = mimemail:decode(Binary),
@@ -97,11 +100,11 @@ maildir_parse(Path) ->
 maildir_type(<<"/cur/">>) -> cur;
 maildir_type(<<"/tmp/">>) -> tmp;
 maildir_type(<<"/new/">>) -> new.
- 
+
 %% private functions
 maildir_commit(Binary, Maildir, Basename, Original) ->
     Tmp = maildir_path(Maildir, tmp, Basename),
-    case file:write_file(Binary, Tmp) of
+    case write_text_file(Binary, Tmp) of
 	{error, Reason} -> {error, Reason};
 	ok ->
 	    case maildir_path(Maildir, cur, Basename) of
@@ -117,6 +120,50 @@ maildir_commit(Binary, Maildir, Basename, Original) ->
 	    end
     end.
 
+%% behave like file:read_file but convert LF to CRLF
+read_text_file(Path) ->
+    case file:open(Path, [read, raw, binary, read_ahead]) of
+	{error, Reason} -> {error, Reason};
+	{ok, Device} ->
+	    case read_lines([], Device) of
+		{error, Reason} ->
+		    file:close(Device),
+		    {error, Reason};
+		{ok, Lines} ->
+		    file:close(Device),
+		    {ok, binstr:join(Lines, "\r\n")}
+	    end
+    end.
+
+read_lines(Buffer, Device) ->
+    case file:read_line(Device) of
+	eof -> {ok, lists:reverse(Buffer)};
+	{error, Reason} -> {error, Reason};
+	{ok, Data} ->
+	    read_lines([string:trim(Data, trailing, "\r\n") | Buffer], Device)
+    end.
+
+%% behave like file:write_file but convert CRLF to LF
+write_text_file(Binary, Path) ->
+    case file:open(Path, [write, raw, delayed_write]) of
+	{error, Reason} -> {error, Reason};
+	{ok, Device} ->
+	    write_lines(Device, Binary),
+	    file:close(Device)
+    end.
+
+write_lines(Device, Binary) ->
+    case binstr:strpos(Binary, "\r\n") of
+	0 -> file:write(Device, Binary);
+	1 ->
+	    file:write(Device, "\n"),
+	    write_lines(Device, binstr:substr(Binary, 3));
+	Index ->
+	    file:write(Device, binstr:substr(Binary, 1, Index - 1)),
+	    file:write(Device, "\n"),
+	    write_lines(Device, binstr:substr(Binary, Index + 2))
+    end.
+
 leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Body})
   when is_binary(Body) ->
     How({Type, SubType, Headers, Parameters, Body});
@@ -129,7 +176,8 @@ leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Contents})
      lists:map(fun(Content) -> leaf_mime_mend(How, Content) end, Contents)}.
 
 set_mime_parent({Type, SubType, Headers, Parameters, Content}, Pid) ->
-    {Type, SubType, set_parent([], Headers, Pid), Parameters, Content}.
+    New_headers = set_parent([], Headers, Pid),
+    {Type, SubType, New_headers, Parameters, Content}.
 
 set_parent(List, [], _Pid) ->
     lists:reverse(List);

@@ -4,9 +4,8 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, contacts/0,
-	 scrub/1, scrub/2, graft/2, graft/3,
-	 find/1, find/2, find/3, find/4]).
+-export([index/0, add/1, contacts/0, find/1, find/2, find/3, find/4]).
+-export([scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -147,6 +146,16 @@ graft(Path, Parent_id) ->
 graft(Path, Parent_id, Maildir) ->
     Pid = msgid_str(Parent_id),
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path, Maildir).
+
+%% orphan a message so it has no parent
+
+-spec orphan(string()) -> {ok, integer()} | {error, binary()}.
+orphan(Path) ->
+    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path).
+
+-spec orphan(string(), string()) -> {ok, integer()} | {error, binary()}.
+orphan(Path, Maildir) ->
+    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path, Maildir).
 
 msgid_str(undefined) -> undefined;
 msgid_str(Parent_id) -> unicode:characters_to_binary([$<, Parent_id, $>]).

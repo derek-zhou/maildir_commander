@@ -6,8 +6,10 @@
   {applications,
    [kernel,
     stdlib,
-    self_configer,
     sasl,
+    self_configer,
+    p1_utils,
+    iconv,
     gen_smtp
    ]},
   {env,[]},

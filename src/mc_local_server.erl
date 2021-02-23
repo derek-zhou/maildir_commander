@@ -13,7 +13,7 @@ start_link() ->
 
 init() ->
     register(?MODULE, self()),
-    File = default(socket_file),
+    File = mc_configer:default(socket_file),
     file:delete(File),
     {ok, LSock} = gen_tcp:listen(0, [binary, {packet, 0}, {active, false},
 				     {ip, {local, File}}]),
@@ -96,19 +96,21 @@ issue_command(<<"graft">>, [Path, Parent, Maildir]) ->
     print_status(maildir_commander:graft(unicode:characters_to_list(Path),
 					 Parent,
 					 unicode:characters_to_list(Maildir)));
-issue_command(Command, Args) ->
+issue_command(<<"archive">>, _Args) ->
+    print_status(maildir_commander:archive());
+issue_command(Command, _Args) ->
     io_lib:format("Unknown command: ~ts~n", [Command]).
 
 print_status({error, Message}) ->
     io_lib:format("error: ~ts~n", [Message]);
-print_status({ok, _Docid}) -> "ok\n".
+print_status(ok) -> "ok\n".
 
 print_tree({error, Message}) ->
     io_lib:format("error: ~ts~n", [Message]);
-print_tree({ok, List, Mails}) ->
+print_tree({ok, Tree, Mails}) ->
     mc_tree:flatmap(fun(Docid, Level) ->
 			    format_mail_header(maps:get(Docid, Mails), Level)
-		    end, List).
+		    end, Tree).
 
 format_mail_header(#{date := Date, from := From, subject := Subject}, Level) ->
     unicode:characters_to_binary(
@@ -145,8 +147,3 @@ send_sexp(Sexp, Sock) ->
     Length = iolist_size(Serialized),
     Length_bin = integer_to_binary(Length, 16),
     gen_tcp:send(Sock, [<<16#FE, Length_bin/binary, 16#FF>>, Serialized]).
-
-%% internal functions
-
-default(socket_file) ->
-    mc_configer:default_value(socket_file, os:getenv("HOME") ++ "/.mc_server_sock").

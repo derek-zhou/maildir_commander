@@ -6,9 +6,12 @@
 %% where Root_list is a list of root Items, Children_map is a map of Item to 
 %% a list of its Children Items, and Parent_map is a map of Item to its Parent item.
 
--export([append/3, finalize/1, flatmap/2, children/2, parent/2, graft/3]).
+-include_lib("kernel/include/logger.hrl").
 
--type mc_tree() :: {list(), map(), map()}.
+-export([append/3, finalize/1, flatmap/2, do_while/3, root_list/1,
+	 children/2, parent/2, graft/3, any/3]).
+
+-type t() :: {list(), map(), map()}.
 
 %% append an Item to the tree at level N
 -spec append(term(), integer(), list()) -> list().
@@ -19,31 +22,55 @@ append(Item, N, [{Pid, Children} | Tail]) ->
 append(Item, _N, [Pid | Tail]) -> [{Pid, [Item]} | Tail].
 
 %% finalize a Tree
--spec finalize(list()) -> mc_tree().
+-spec finalize(list()) -> t().
 finalize(Tree) ->
     { nodes_to_items(Tree),
       nodes_to_children_map(Tree),
       nodes_to_parent_map(undefined, Tree) }.
 
 %% return a list that apply Fun(Each, Level) to each item
--spec flatmap(function(), mc_tree()) -> list().
+-spec flatmap(function(), t()) -> list().
 flatmap(Fun, {Root_list, Children_map, _Parent_map}) ->
     flatmap(Fun, 0, Root_list, Children_map).
 
+%% do action on every node that are decendent of list. The action should return ok
+%% when successful. If any action return non-ok, return the non-ok value right there
+%% otherwise, return ok
+-spec do_while(function(), list(), t()) -> ok | term().
+do_while(Action, List, {_Root_list, Children_map, _Parent_map}) ->
+    do_while(Action, List, Children_map);
+do_while(_Action, [], _Children_map) -> ok;
+do_while(Action, [Item | Tail], Children_map) ->
+    case Action(Item) of
+	ok ->
+	    case do_while(Action, maps:get(Item, Children_map, []), Children_map) of
+		ok -> do_while(Action, Tail, Children_map);
+		Err -> Err
+	    end;
+	{error, Reason} ->
+	    ?LOG_WARNING("Action failed: ~ts", [Reason]),
+	    {error, Reason}
+    end.
+
+%% return the root list
+-spec root_list(t()) -> list().
+root_list({Root_list, _Children_map, _Parent_map}) -> Root_list.
+
 %% get the children of an Item
--spec children(term(), mc_tree()) -> list().
+-spec children(undefined | term(), t()) -> list().
+children(undefined, {Root_list, _Children_map, _Parent_map}) -> Root_list;
 children(Item, {_Root_list, Children_map, _Parent_map}) ->
     maps:get(Item, Children_map, []).
     
 %% get the parent of an Item
--spec parent(term(), mc_tree()) -> undefined | term().
+-spec parent(term(), t()) -> undefined | term().
 parent(Item, {_Root_list, _Children_map, Parent_map}) ->
     maps:get(Item, Parent_map, undefined).
 
 %% to cut a Item from the tree and connect to another Item as a Child.
 %% First, The Item and its sub tree will be disconnected.
 %% The second Item can be undefined, and the Item will be connected to root
--spec graft(term(), undefined | term(), mc_tree()) -> list().
+-spec graft(term(), undefined | term(), t()) -> list().
 graft(Item, undefined, {Root_list, Children_map, Parent_map}) ->
     case maps:get(Item, Parent_map, undefined) of
 	undefined -> {Root_list, Children_map, Parent_map};
@@ -70,6 +97,18 @@ graft(Item, Parent, {Root_list, Children_map, Parent_map}) ->
 			    Parent =>
 				[Item | maps:get(Parent, Children_map, [])] }),
 	      maps:put(Item, Parent, Parent_map) }
+    end.
+
+%% given an Item, return if any of itself and it's decendants satisfy a prdicate
+%% if Item is undefined, run it on all Root_list
+-spec any(fun(), undefined | term(), t()) -> boolean().
+any(Pred, undefined, {Root_list, Children_map, _Parent_map}) ->
+    any_in_list(Pred, Root_list, Children_map);
+any(Pred, Item, {_Root_list, Children_map, _Parent_map}) ->
+    case Pred(Item) of
+	true -> true;
+	false ->
+	    any_in_list(Pred, maps:get(Item, Children_map, []), Children_map)
     end.
 
 %% private functions
@@ -108,3 +147,14 @@ nodes_to_parent_map(Parent, [{Item, Children} | Tail]) ->
 		nodes_to_parent_map(Parent, Tail) );
 nodes_to_parent_map(Parent, [Item | Tail]) ->
     maps:put(Item, Parent, nodes_to_parent_map(Parent, Tail)).
+
+any_in_list(_Pred, [], _Children_map) -> false;
+any_in_list(Pred, [Head | Tail], Children_map) ->
+    case Pred(Head) of
+	true -> true;
+	false ->
+	    case any_in_list(Pred, maps:get(Head, Children_map, []), Children_map) of
+		true -> true;
+		false -> any_in_list(Pred, Tail, Children_map)
+	    end
+    end.

@@ -4,8 +4,10 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, contacts/0, find/1, find/2, find/3, find/4]).
--export([scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2]).
+-export([index/0, add/1, delete/1, contacts/0,
+	 find/1, find/2, find/3, find/4, find/5, find/6,
+	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2,
+	 archive/0]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -24,9 +26,8 @@ index_loop() ->
     end.
 
 %% add a message to the database. it must has the full path and is already be in the Maildir.
-%% return {ok, Docid} where Docid is the docid of the message in the database,
-%% or {error, Msg} where Msg is a binary string for the error
--spec add(string()) -> {ok, integer()} | {error, binary()}.
+%% return ok if successful or {error, Msg} where Msg is a binary string for the error
+-spec add(string()) -> ok | {error, binary()}.
 add(Path) ->
     case mc_mender:maildir_parse(Path) of
 	{error, Reason} -> {error, Reason};
@@ -41,8 +42,20 @@ add(Path) ->
 add_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"sent">>, t} | Rest ]} ->
-	    {ok, proplists:get_value(<<"docid">>, Rest)}
+	{async, [{<<"sent">>, t} | _Rest ]} -> ok
+    end.
+
+%% delete a message from both the filesystem and the database
+-spec delete(integer()) -> ok | {error, binary()}.
+delete(Docid) ->
+    Command = mc_mu_api:remove(Docid),
+    ok = mc_server:command(Command),
+    remove_loop().
+
+remove_loop() ->
+    receive
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
+	{async, [{<<"remove">>, _} | _Rest ]} -> ok
     end.
 
 %% return all contacts in the database
@@ -65,19 +78,33 @@ contacts() ->
     end.
 
 %% return all mail matching the query. return a tree of docids, and a map from docid to mail
--spec find(string()) -> {ok, list(), map()} | {error, binary()}.
+-spec find(string()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query) -> find(Query, false).
 
--spec find(string(), boolean()) -> {ok, list(), map()} | {error, binary()}.
-find(Query, Threads) -> find(Query, Threads, default(sort_field)).
+-spec find(string(), boolean()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
+find(Query, Threads) -> find(Query, Threads, mc_configer:default(sort_field)).
 
--spec find(string(), boolean(), string()) -> {ok, list(), map()} | {error, binary()}.
+-spec find(string(), boolean(), string()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query, Threads, Sort_field) -> find(Query, Threads, Sort_field, false).
 
--spec find(string(), boolean(), string(), boolean()) -> {ok, list(), map()} | {error, binary()}.
+-spec find(string(), boolean(), string(), boolean()) ->
+	  {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query, Threads, Sort_field, Reverse_sort) ->
+    find(Query, Threads, Sort_field, Reverse_sort,
+	 Threads orelse mc_configer:default(skip_dups)).
+
+-spec find(string(), boolean(), string(), boolean(), boolean()) ->
+	  {ok, mc_tree:t(), map()} | {error, binary()}.
+find(Query, Threads, Sort_field, Reverse_sort, Skip_dups) ->
+    find(Query, Threads, Sort_field, Reverse_sort, Skip_dups,
+	 Threads orelse mc_configer:default(include_related)).
+
+-spec find(string(), boolean(), string(), boolean(), boolean(), boolean()) ->
+	  {ok, mc_tree:t(), map()} | {error, binary()}.
+find(Query, Threads, Sort_field, Reverse_sort, Skip_dups, Include_related) ->
     Command = mc_mu_api:find(Query, Threads, Sort_field, Reverse_sort,
-			     default(max_num), Threads, Threads),
+			     mc_configer:default(max_num),
+			     Skip_dups, Include_related),
     ok = mc_server:command(Command),
     find_loop([], #{}).
 
@@ -117,16 +144,16 @@ parse_mail_headers(Headers) ->
 	       end,
        size => proplists:get_value(<<"size">>, Headers, 0),
        msgid => proplists:get_value(<<"message-id">>, Headers),
-       path => proplists:get_value(<<"path">>, Headers),
+       path => unicode:characters_to_list(proplists:get_value(<<"path">>, Headers)),
        flags => proplists:get_value(<<"flags">>, Headers, []) }.
 
 %% scrub all attachments
 
--spec scrub(string()) -> {ok, integer()} | {error, binary()}.
+-spec scrub(string()) -> ok | {error, binary()}.
 scrub(Path) ->
     mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path).
 
--spec scrub(string(), string()) -> {ok, integer()} | {error, binary()}.
+-spec scrub(string(), string()) -> ok | {error, binary()}.
 scrub(Path, Maildir) ->
     mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path, Maildir).
 
@@ -137,28 +164,30 @@ scrub(Path, Maildir) ->
 %% shall come out ok, which should be the majority cases. If they have something bogus then they
 %% could be orphaned. It is better to limit mending to the minimum.
 
--spec graft(string(), undefined | string()) -> {ok, integer()} | {error, binary()}.
+-spec graft(string(), undefined | string()) -> ok | {error, binary()}.
 graft(Path, Parent_id) ->
     Pid = msgid_str(Parent_id),
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path).
 
--spec graft(string(), undefined | string(), string()) -> {ok, integer()} | {error, binary()}.
+-spec graft(string(), undefined | string(), string()) -> ok | {error, binary()}.
 graft(Path, Parent_id, Maildir) ->
     Pid = msgid_str(Parent_id),
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path, Maildir).
 
 %% orphan a message so it has no parent
 
--spec orphan(string()) -> {ok, integer()} | {error, binary()}.
+-spec orphan(string()) -> ok | {error, binary()}.
 orphan(Path) ->
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path).
 
--spec orphan(string(), string()) -> {ok, integer()} | {error, binary()}.
+-spec orphan(string(), string()) -> ok | {error, binary()}.
 orphan(Path, Maildir) ->
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path, Maildir).
 
+%% trigger an archive run in the background
+-spec archive() -> ok.
+archive() -> mc_archiver:trigger().
+
+%% private functions
 msgid_str(undefined) -> undefined;
 msgid_str(Parent_id) -> unicode:characters_to_binary([$<, Parent_id, $>]).
-
-default(sort_field) -> mc_configer:default_value(sort_field, "subject");
-default(max_num) -> mc_configer:default_value(max_num, 1024).

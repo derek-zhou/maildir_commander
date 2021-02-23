@@ -12,7 +12,7 @@
 %% mend an email from Path by chenging its contents using the closure How,
 %% then put it into Maildir
 
--spec mend(function(), string()) -> {ok, integer()} | {error, binary()}.
+-spec mend(function(), string()) -> ok | {error, binary()}.
 mend(How, Path) ->
     case maildir_parse(Path) of
 	{error, Reason} -> {error, Reason};
@@ -20,14 +20,20 @@ mend(How, Path) ->
 	{_Maildir, _Type, _Basename} -> {error, "Not in cur maildir"}
     end.
 
--spec mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
+-spec mend(function(), string(), string()) -> ok | {error, binary()}.
 mend(How, Path, Maildir) ->
     case read_text_file(Path) of
 	{error, Reason} -> {error, Reason};
 	{ok, Binary} ->
 	    Mime = mimemail:decode(Binary),
 	    Mended_mime = How(Mime),
-	    Mended = mimemail:encode(Mended_mime),
+	    Mended =
+		try mimemail:encode(Mended_mime)
+		catch error:_ ->
+			?LOG_WARNING("Cannot encode mime of ~ts. Fallback to the original",
+				     [Path]),
+			Binary
+		end,
 	    case maildir_commit(Mended, Maildir, filename:basename(Path), Path) of
 		{error, Reason} -> {error, Reason};
 		{ok, New_path} -> maildir_commander:add(New_path)
@@ -36,11 +42,11 @@ mend(How, Path, Maildir) ->
 
 %% mend only the leaf mime parts
 
--spec leaf_mend(function(), string()) -> {ok, integer()} | {error, binary()}.
+-spec leaf_mend(function(), string()) -> ok | {error, binary()}.
 leaf_mend(How, Path) ->
     mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path).
 
--spec leaf_mend(function(), string(), string()) -> {ok, integer()} | {error, binary()}.
+-spec leaf_mend(function(), string(), string()) -> ok | {error, binary()}.
 leaf_mend(How, Path, Maildir) ->
     mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path, Maildir).
 
@@ -63,7 +69,7 @@ maildir_path(Maildir, Type) ->
 -spec maildir_path(string(), atom(), string()) -> string().
 maildir_path(Maildir, Type, Basename)
   when Type == cur orelse Type == tmp orelse Type == new ->
-    lists:flatten([default(index_path),
+    lists:flatten([mc_configer:default(index_path),
 		   case Maildir of
 		       "/" -> "";
 		       String -> [$/ | String]
@@ -76,7 +82,7 @@ maildir_path(Maildir, Type, Basename)
 %% infer maildir, type and basename from full path
 -spec maildir_parse(string()) -> {error, binary()} | {string(), atom(), string()}.
 maildir_parse(Path) ->
-    Dir = default(index_path),
+    Dir = mc_configer:default(index_path),
     case string:prefix(Path, Dir) of
 	nomatch -> {error, <<"Not under root Maildir">>};
 	Remain ->
@@ -189,6 +195,3 @@ set_parent(List, [{<<"References">>, _} | Tail], Pid) ->
     set_parent(List, Tail, Pid);
 set_parent(List, [Head | Tail], Pid) ->
     set_parent([Head | List], Tail, Pid).
-
-default(index_path) ->
-    mc_configer:default_value(index_path, os:getenv("HOME") ++ "/Maildir").

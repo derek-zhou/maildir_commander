@@ -90,7 +90,7 @@ move_mail(File, From, To) ->
 	    case maildir_commander:add(Dest) of
 		{error, Msg} ->
 		    ?LOG_WARNING("error in adding ~ts. Error: ~ts", [File, Msg]);
-		{ok, Docid} ->
-		    ?LOG_NOTICE("added ~ts to the database, docid: ~B", [File, Docid])
+		ok ->
+		    ?LOG_NOTICE("added ~ts to the database", [File])
 	    end
     end.

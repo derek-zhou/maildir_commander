@@ -1,12 +1,44 @@
 -module(mc_configer).
 
--export([default_value/2]).
+-export([default/1]).
+
+default(index_path) ->
+    default_value(index_path, os:getenv("HOME") ++ "/Maildir");
+default(my_addresses) ->
+    default_value(my_addresses,
+		 fun() ->
+			 case file:read_file("/etc/mailname") of
+			     {error, _Reason} -> [];
+			     {ok, Binary} ->
+				 Trimmed = string:trim(Binary, trailing),
+				 User = os:getenv("USER"),
+				 [unicode:characters_to_list([User, $@, Trimmed])]
+			 end
+		 end);
+default(threading) -> default_value(threading, false);
+default(sort_field) -> default_value(sort_field, "subject");
+default(max_num) -> default_value(max_num, 1024);
+default(reverse_sort) -> default_value(reverse_sort, false);
+default(skip_dups) -> default_value(skip_dups, false);
+default(include_related) -> default_value(include_related, false);
+default(move_new_name) -> default_value(move_new_name, false);
+default(extract_images) -> default_value(extract_images, false);
+default(extract_encrypted) -> default_value(extract_encrypted, false);
+default(use_agent) -> default_value(use_agent, true);
+default(contacts_personal) -> default_value(contacts_personal, true);
+default(contacts_after) -> default_value(contacts_after, 0);
+default(index_cleanup) -> default_value(index_cleanup, true);
+default(index_lazy_check) -> default_value(index_lazy_check, false);
+default(archive_days) -> default_value(archive_days, 30);
+default(archive_maildir) -> default_value(archive_maildir, "/.Archive");
+default(socket_file) ->
+    default_value(socket_file, os:getenv("HOME") ++ "/.mc_server_sock").
 
 %% return the config value with default. Default can be a value or a zero arity function
 %% to compute the default value
--spec default_value(atom(), term() | function()) -> term().
 default_value(Key, Default) when is_function(Default, 0) ->
-    case application:get_env(Key) of
+    {ok, App} = application:get_application(?MODULE),
+    case application:get_env(App, Key) of
 	undefined ->
 	    Def = Default(),
 	    self_configer:set_env(?MODULE, Key, Def),
@@ -14,7 +46,8 @@ default_value(Key, Default) when is_function(Default, 0) ->
 	{ok, Val} -> Val
     end;
 default_value(Key, Default) ->
-    case application:get_env(Key) of
+    {ok, App} = application:get_application(?MODULE),
+    case application:get_env(App, Key) of
 	undefined ->
 	    self_configer:set_env(?MODULE, Key, Default),
 	    Default;

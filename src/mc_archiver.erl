@@ -34,25 +34,28 @@ run_archiving(_State) ->
 		mc_configer:default(archive_days) * 86400,
 	    Archive = mc_configer:default(archive_maildir),
 	    My_addresses = sets:from_list(mc_configer:default(my_addresses)),
+	    Is_recent =
+		fun(Docid) ->
+			is_recent(maps:get(Docid, Messages), Horizon)
+		end,
+	    Is_important =
+		fun(Docid) ->
+			is_important(maps:get(Docid, Messages), My_addresses)
+		end,
 	    {_Recent_list, Expired_list} =
 		lists:partition(
-		  fun (Each) ->
-			  mc_tree:any(
-			    fun(Docid) ->
-				    is_recent(maps:get(Docid, Messages), Horizon)
-			    end, Each, Tree) end,
+		  fun (Each) -> mc_tree:any(Is_recent, Each, Tree) end,
 		  mc_tree:root_list(Tree)),
 	    {Archive_list, Junk_list} =
 		lists:partition(
-		  fun (Each) ->
-			  mc_tree:any(
-			    fun(Docid) ->
-				    is_important(maps:get(Docid, Messages), My_addresses)
-			    end, Each, Tree) end,
+		  fun (Each) -> mc_tree:any(Is_important, Each, Tree) end,
 		  Expired_list),
-	    ok = delete_conversations(Junk_list, Tree, Messages),
-	    ok = archive_conversations(Archive_list, Archive, Tree, Messages),
-	    ?LOG_NOTICE("Finishing archiving run"),
+	    {ok, Delete_count} =
+		delete_conversations(Junk_list, Tree, Messages),
+	    {ok, Archive_count} =
+		archive_conversations(Archive_list, Archive, Tree, Messages),
+	    ?LOG_NOTICE("Finishing archiving run, ~B deleted, ~B archived",
+		       [Delete_count, Archive_count]),
 	    ok
     end.
 

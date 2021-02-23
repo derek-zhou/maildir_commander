@@ -35,22 +35,10 @@ flatmap(Fun, {Root_list, Children_map, _Parent_map}) ->
 
 %% do action on every node that are decendent of list. The action should return ok
 %% when successful. If any action return non-ok, return the non-ok value right there
-%% otherwise, return ok
--spec do_while(function(), list(), t()) -> ok | term().
+%% otherwise, return {ok, Count}
+-spec do_while(function(), list(), t()) -> {ok, integer} | term().
 do_while(Action, List, {_Root_list, Children_map, _Parent_map}) ->
-    do_while(Action, List, Children_map);
-do_while(_Action, [], _Children_map) -> ok;
-do_while(Action, [Item | Tail], Children_map) ->
-    case Action(Item) of
-	ok ->
-	    case do_while(Action, maps:get(Item, Children_map, []), Children_map) of
-		ok -> do_while(Action, Tail, Children_map);
-		Err -> Err
-	    end;
-	{error, Reason} ->
-	    ?LOG_WARNING("Action failed: ~ts", [Reason]),
-	    {error, Reason}
-    end.
+    do_while(Action, 0, List, Children_map).
 
 %% return the root list
 -spec root_list(t()) -> list().
@@ -119,6 +107,21 @@ flatmap(Fun, Level, [Item | Tail], Children_map) ->
 	Children ->
 	    [[Fun(Item, Level) | flatmap(Fun, Level + 1, Children, Children_map)] |
 	     flatmap(Fun, Level, Tail, Children_map)]
+    end.
+
+do_while(_Action, Count, [], _Children_map) -> {ok, Count};
+do_while(Action, Count, [Item | Tail], Children_map) ->
+    case Action(Item) of
+	ok ->
+	    case do_while(Action, Count + 1,
+			  maps:get(Item, Children_map, []),
+			  Children_map) of
+		{ok, Count2} -> do_while(Action, Count2, Tail, Children_map);
+		Err -> Err
+	    end;
+	{error, Reason} ->
+	    ?LOG_WARNING("Action failed: ~ts", [Reason]),
+	    {error, Reason}
     end.
 
 nodes_to_items(List) -> nodes_to_items([], List).

@@ -222,4 +222,9 @@ fun_ending([{<<"cmd">>, <<"add">>} | _]) ->
        ([{<<"update">>, _} | _Tail]) -> true;
        (_) -> false
     end;
+fun_ending([{<<"cmd">>, <<"view">>} | _]) ->
+    fun([{<<"error">>, _} | _Tail]) -> true;
+       ([{<<"view">>, _} | _Tail]) -> true;
+       (_) -> false
+    end;
 fun_ending(_) -> fun(_) -> true end.

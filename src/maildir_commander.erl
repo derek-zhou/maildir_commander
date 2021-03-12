@@ -22,7 +22,9 @@ index_loop() ->
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
 	{async, [{<<"info">>, index}, {<<"status">>, complete} | Rest ]} ->
 	    {ok, proplists:get_value(<<"processed">>, Rest)};
-	{async, [{<<"info">>, index} | _ ]} -> index_loop()
+	%% last 2 are chatty messages that we don't care
+	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
+	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
 %% add a message to the database. it must has the full path and is already be in the Maildir.
@@ -42,7 +44,10 @@ add(Path) ->
 add_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"sent">>, t} | _Rest ]} -> ok
+	{async, [{<<"sent">>, t} | _Rest ]} -> ok;
+	%% last 2 are chatty messages that we don't care
+	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
+	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
 %% delete a message from both the filesystem and the database
@@ -55,7 +60,10 @@ delete(Docid) ->
 remove_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"remove">>, _} | _Rest ]} -> ok
+	{async, [{<<"remove">>, _} | _Rest ]} -> ok;
+	%% last 2 are chatty messages that we don't care
+	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
+	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
 %% return all contacts in the database
@@ -63,6 +71,9 @@ remove_loop() ->
 contacts() ->
     Command = mc_mu_api:contacts(),
     ok = mc_server:command(Command),
+    contacts_loop().
+
+contacts_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
 	{async, [{<<"contacts">>, Contacts}]} ->
@@ -74,7 +85,9 @@ contacts() ->
 			       Name -> {Name, Mail}
 			   end
 		   end, Contacts)};
-	{async, [{<<"info">>, index} | _ ]} -> index_loop()
+	%% last 2 are chatty messages that we don't care
+	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
+	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
 %% return all mail matching the query. return a tree of docids, and a map from docid to mail
@@ -110,15 +123,15 @@ find(Query, Threads, Sort_field, Reverse_sort, Skip_dups, Include_related) ->
 
 find_loop(Tree, Mails) ->
     receive
-	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} ->
-	    {error, Msg};
-	{async, [{<<"erase">>, t} | _ ]} ->
-	    find_loop([], #{});
-	{async, [{<<"found">>, _Total} | _ ]} ->
-	    {ok, mc_tree:finalize(Tree), Mails};
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
+	{async, [{<<"erase">>, t} | _ ]} -> find_loop([], #{});
+	{async, [{<<"found">>, _Total} | _ ]} -> {ok, mc_tree:finalize(Tree), Mails};
 	{async, [{<<"docid">>, Docid} | Headers ]} when is_integer(Docid) ->
 	    find_loop(mc_tree:append(Docid, parse_thread_level(Headers), Tree),
-		      maps:put(Docid, parse_mail_headers(Headers), Mails))
+		      maps:put(Docid, parse_mail_headers(Headers), Mails));
+	%% last 2 are chatty messages that we don't care
+	{async, [{<<"update">>, _} | _ ]} -> find_loop(Tree, Mails);
+	{async, [{<<"info">>, _} | _ ]} -> find_loop(Tree, Mails)
     end.
 
 parse_thread_level(Headers) ->

@@ -176,7 +176,7 @@ contacts(Personal) ->
 contacts(Personal, After) ->
     [contacts,
      {<<"personal">>, Personal},
-     {<<"after">>, After}].
+     {<<"after">>, integer_to_binary(After)}].
 
 index() ->
     index(mc_configer:default(index_cleanup)).

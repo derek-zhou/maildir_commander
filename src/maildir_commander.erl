@@ -71,15 +71,8 @@ contacts() ->
 contacts_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"contacts">>, Contacts}]} ->
-	    {ok, lists:map(
-		   fun (Each) ->
-			   Mail = proplists:get_value(<<"mail">>, Each),
-			   case proplists:get_value(<<"name">>, Each) of
-			       nil -> {<<>>, Mail};
-			       Name -> {Name, Mail}
-			   end
-		   end, Contacts)};
+	{async, [{<<"contacts">>, Contacts} | _ ]} ->
+	    {ok, lists:map(fun ([Contact | _]) -> Contact end, Contacts)};
 	%% last 2 are chatty messages that we don't care
 	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()

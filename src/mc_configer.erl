@@ -15,7 +15,7 @@ default(move_no_view) -> default_value(move_no_view, false);
 default(extract_images) -> default_value(extract_images, false);
 default(decrypt) -> default_value(decrypt, false);
 default(verify) -> default_value(verify, true);
-default(contacts_personal) -> default_value(contacts_personal, true);
+default(contacts_personal) -> default_value(contacts_personal, false);
 default(contacts_after) -> default_value(contacts_after, 0);
 default(index_cleanup) -> default_value(index_cleanup, true);
 default(index_lazy_check) -> default_value(index_lazy_check, false);
@@ -29,18 +29,13 @@ default(socket_file) ->
 default_value(Key, Default) when is_function(Default, 0) ->
     {ok, App} = application:get_application(?MODULE),
     case application:get_env(App, Key) of
-	undefined ->
-	    Def = Default(),
-	    self_configer:set_env(?MODULE, Key, Def),
-	    Def;
+	undefined -> Default();
 	{ok, Val} -> Val
     end;
 default_value(Key, Default) ->
     {ok, App} = application:get_application(?MODULE),
     case application:get_env(App, Key) of
-	undefined ->
-	    self_configer:set_env(?MODULE, Key, Default),
-	    Default;
+	undefined -> Default;
 	{ok, Val} -> Val
     end.
 

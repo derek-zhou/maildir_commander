@@ -64,10 +64,7 @@ issue_command(<<"contacts">>, _Args) ->
 	{error, Message} ->
 	    io_lib:format("error: ~ts~n", [Message]);
 	{ok, Contacts} ->
-	    lists:map(
-	      fun({Name, Mail}) ->
-		      unicode:characters_to_binary(io_lib:format("~ts <~ts>~n", [Name, Mail]))
-	      end, Contacts)
+	    lists:join($\n, Contacts)
     end;
 issue_command(<<"index">>, _Args) ->
     case maildir_commander:index() of

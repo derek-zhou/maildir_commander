@@ -34,7 +34,7 @@ service(Sock) ->
     service_loop([], Sock).
 
 service_loop(Buffer, Sock) ->
-    case mc_sexp:parse(Buffer) of
+    case mc_sexp:parse_incomplete(Buffer) of
 	incomplete ->
 	    case gen_tcp:recv(Sock, 0) of
 		{ok, Packet} -> service_loop(Buffer ++ [Packet], Sock);
@@ -64,7 +64,10 @@ issue_command(<<"contacts">>, _Args) ->
 	{error, Message} ->
 	    io_lib:format("error: ~ts~n", [Message]);
 	{ok, Contacts} ->
-	    lists:join($\n, Contacts)
+	    lists:map(
+	      fun ([Name | Email]) ->
+		      [mc_sexp:escape(Name), <<" <">>, Email, <<">\n">>]
+	      end, Contacts)
     end;
 issue_command(<<"index">>, _Args) ->
     case maildir_commander:index() of

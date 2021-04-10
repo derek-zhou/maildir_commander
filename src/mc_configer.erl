@@ -5,9 +5,9 @@
 default(index_path) ->
     default_value(index_path, os:getenv("HOME") ++ "/Maildir");
 default(threading) -> default_value(threading, false);
-default(sort_field) -> default_value(sort_field, ':subject');
+default(sort_field) -> default_value(sort_field, ':date');
 default(max_num) -> default_value(max_num, 1024);
-default(descending_sort) -> default_value(descending_sort, false);
+default(descending_sort) -> default_value(descending_sort, true);
 default(skip_dups) -> default_value(skip_dups, false);
 default(include_related) -> default_value(include_related, false);
 default(move_new_name) -> default_value(move_new_name, false);

@@ -72,7 +72,10 @@ contacts_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
 	{async, [{<<"contacts">>, Contacts} | _ ]} ->
-	    {ok, lists:map(fun ([Contact | _]) -> Contact end, Contacts)};
+	    {ok, lists:map(
+		   fun ([Contact | _]) ->
+			   parse_contact(Contact)
+		   end, Contacts)};
 	%% last 2 are chatty messages that we don't care
 	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
@@ -192,3 +195,10 @@ archive() -> mc_archiver:trigger().
 %% private functions
 msgid_str(undefined) -> undefined;
 msgid_str(Parent_id) -> unicode:characters_to_binary([$<, Parent_id, $>]).
+
+%% parsr a contact into [Name | Mail]
+parse_contact(Contact) ->
+    case re:run(Contact, "(.*)<(.*)>", [{capture, all_but_first, binary}]) of
+	nomatch -> [<<"">> | Contact];
+	{match, [N, Mail]} -> [string:trim(N, both, "\s\r\n\t\"") | Mail]
+    end.

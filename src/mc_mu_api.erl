@@ -39,7 +39,7 @@ find(Query, Threads, Sortfield, Descending, Maxnum, Skip_dups) ->
 %% return a list of messages without the message-body
 find(Query, Threads, Sortfield, Descending, Maxnum, Skip_dups, Include_related) ->
     [find,
-     {<<"query">>, base64:encode(unicode:characters_to_binary(Query))},
+     {<<"query">>, unicode:characters_to_binary(Query)},
      {<<"threads">>, Threads},
      {<<"sortfield">>, Sortfield},
      {<<"descending">>, Descending},

@@ -7,11 +7,11 @@ case $1 in
 	;;
     *)
 	# this is force quoting all arguments
-	Command="cmdx:$1"
+	Command="(mc \"$1\""
 	shift
 	for Arg in "$@"; do
 	    Command+=" \"$Arg\""
 	done
-	echo $Command | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
+	echo "$Command)" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
 esac

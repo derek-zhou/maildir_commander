@@ -5,7 +5,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 -export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, scrub_mime/1, set_mime_parent/2]).
--export([maildir_path/2, maildir_path/3, maildir_parse/1]).
+-export([maildir_path/2]).
 
 -export([read_text_file/1, write_text_file/2]).
 

@@ -3,7 +3,7 @@ maildir commander is a wrapper arond maildir-utils to make it more versatile. `m
 
 ## dependency
 
-* [mu](https://www.djcbsoftware.nl/code/mu/)
+* [mu](https://www.djcbsoftware.nl/code/mu/) 1.4+
 * erlang OTP 21+
 * socat, which is used to re-export the `mu server` compatible interface
 * inotify-tools, for watching the Maildir for new mails
@@ -36,7 +36,7 @@ maildir_empty_new = no
 
 ## Future works
 
-maildir_commander is meant to be used as the lower layer of more sofisticated MUAs such as a web client, a IMAP client, etc, so they can run along side with the command line client and mu4e.
+maildir_commander is meant to be used as the lower layer of more sofisticated MUAs such as a web client, an IMAP client, etc, so they can run along side with the command line client and mu4e.
 
 
 

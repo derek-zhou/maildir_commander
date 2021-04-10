@@ -34,7 +34,7 @@ service(Sock) ->
     service_loop([], Sock).
 
 service_loop(Buffer, Sock) ->
-    case mc_cmd:parse(Buffer) of
+    case mc_sexp:parse(Buffer) of
 	incomplete ->
 	    case gen_tcp:recv(Sock, 0) of
 		{ok, Packet} -> service_loop(Buffer ++ [Packet], Sock);
@@ -43,20 +43,20 @@ service_loop(Buffer, Sock) ->
 		    gen_tcp:shutdown(Sock, write)
 	    end;
 	{[], Remain} -> service_loop([Remain], Sock);
-	{[{<<"cmd">>, <<"quit">>} | _], _Remain} ->
+	{[quit | _], _Remain} ->
 	    gen_tcp:shutdown(Sock, write);
-	{Command = [{<<"cmd">>, _} | _], Remain} ->
-	    ok = mc_server:command(Command),
-	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
-	    service_loop([Remain], Sock);
 	%% index is special because we need to print progress
-	{[{<<"cmdx">>, <<"index">>}], _Remain} ->
+	{[mc, <<"index">> | _], _Remain} ->
 	    ok = mc_server:command(mc_mu_api:index()),
 	    wait_index_loop(Sock),
 	    gen_tcp:shutdown(Sock, write);
-	{[{<<"cmdx">>, Command} | Args], _Remain} ->
+	{[mc, Command | Args], _Remain} ->
 	    gen_tcp:send(Sock, issue_command(Command, Args)),
-	    gen_tcp:shutdown(Sock, write)
+	    gen_tcp:shutdown(Sock, write);
+	{Command, Remain} ->
+	    ok = mc_server:command(Command),
+	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
+	    service_loop([Remain], Sock)
     end.
 
 issue_command(<<"contacts">>, _Args) ->

@@ -38,7 +38,7 @@ init([]) ->
 %% internal functions
 kill(#mc_state{port = Port}) ->
     Command = mc_mu_api:quit(),
-    port_command(Port, mc_cmd:to_string(Command)),
+    port_command(Port, mc_sexp:cmd_string(Command)),
     %% we do not care what the server has to say in quit; and it is not reliable anyway.
     %% however we want to wait until the server close the port, don't sigpipe the server
     flush_port(Port).
@@ -46,7 +46,7 @@ kill(#mc_state{port = Port}) ->
 cold_boot() ->
     Data = #mc_state{port = Port} = boot(),
     Command = mc_mu_api:index(),
-    port_command(Port, mc_cmd:to_string(Command)),
+    port_command(Port, mc_sexp:cmd_string(Command)),
     Fun = mc_mu_api:fun_ending(Command),
     Data#mc_state{end_test = Fun}.
 
@@ -140,7 +140,7 @@ running(internal, async, Data = #mc_state{port = Port,
     end;
 running({call, From = {Client, _Tag}}, {command, Command},
 	Data = #mc_state{port = Port, count = Count}) ->
-    port_command(Port, mc_cmd:to_string(Command)),
+    port_command(Port, mc_sexp:cmd_string(Command)),
     Fun = mc_mu_api:fun_ending(Command),
     {keep_state,
      Data#mc_state{client = Client, end_test = Fun, buffer = <<>>, count = Count + 1},

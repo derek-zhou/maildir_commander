@@ -31,15 +31,10 @@ index_loop() ->
 %% return ok if successful or {error, Msg} where Msg is a binary string for the error
 -spec add(string()) -> ok | {error, binary()}.
 add(Path) ->
-    case mc_mender:maildir_parse(Path) of
-	{error, Reason} -> {error, Reason};
-	{Maildir, cur, _Basename} ->
-	    %% the sent function name is from mu. add return too much crap
-	    Command = mc_mu_api:sent(Path, Maildir),
-	    mc_server:command(Command),
-	    add_loop();
-	{_Maildir, _Type, _Basename} -> {error, <<"Not in cur sub dir">>}
-    end.
+    %% the sent function name is from mu. add return too much crap
+    Command = mc_mu_api:sent(Path),
+    mc_server:command(Command),
+    add_loop().
 
 add_loop() ->
     receive
@@ -102,20 +97,20 @@ find(Query, Threads, Sort_field) -> find(Query, Threads, Sort_field, false).
 
 -spec find(string(), boolean(), string(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.
-find(Query, Threads, Sort_field, Reverse_sort) ->
-    find(Query, Threads, Sort_field, Reverse_sort,
+find(Query, Threads, Sort_field, Descending) ->
+    find(Query, Threads, Sort_field, Descending,
 	 Threads orelse mc_configer:default(skip_dups)).
 
 -spec find(string(), boolean(), string(), boolean(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.
-find(Query, Threads, Sort_field, Reverse_sort, Skip_dups) ->
-    find(Query, Threads, Sort_field, Reverse_sort, Skip_dups,
+find(Query, Threads, Sort_field, Descending, Skip_dups) ->
+    find(Query, Threads, Sort_field, Descending, Skip_dups,
 	 Threads orelse mc_configer:default(include_related)).
 
 -spec find(string(), boolean(), string(), boolean(), boolean(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.
-find(Query, Threads, Sort_field, Reverse_sort, Skip_dups, Include_related) ->
-    Command = mc_mu_api:find(Query, Threads, Sort_field, Reverse_sort,
+find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
+    Command = mc_mu_api:find(Query, Threads, Sort_field, Descending,
 			     mc_configer:default(max_num),
 			     Skip_dups, Include_related),
     ok = mc_server:command(Command),

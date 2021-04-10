@@ -4,27 +4,17 @@
 
 default(index_path) ->
     default_value(index_path, os:getenv("HOME") ++ "/Maildir");
-default(my_addresses) ->
-    default_value(my_addresses,
-		 fun() ->
-			 case file:read_file("/etc/mailname") of
-			     {error, _Reason} -> [];
-			     {ok, Binary} ->
-				 Trimmed = string:trim(Binary, trailing),
-				 User = os:getenv("USER"),
-				 [unicode:characters_to_list([User, $@, Trimmed])]
-			 end
-		 end);
 default(threading) -> default_value(threading, false);
-default(sort_field) -> default_value(sort_field, "subject");
+default(sort_field) -> default_value(sort_field, ':subject');
 default(max_num) -> default_value(max_num, 1024);
-default(reverse_sort) -> default_value(reverse_sort, false);
+default(descending_sort) -> default_value(descending_sort, false);
 default(skip_dups) -> default_value(skip_dups, false);
 default(include_related) -> default_value(include_related, false);
 default(move_new_name) -> default_value(move_new_name, false);
+default(move_no_view) -> default_value(move_no_view, false);
 default(extract_images) -> default_value(extract_images, false);
-default(extract_encrypted) -> default_value(extract_encrypted, false);
-default(use_agent) -> default_value(use_agent, true);
+default(decrypt) -> default_value(decrypt, false);
+default(verify) -> default_value(verify, true);
 default(contacts_personal) -> default_value(contacts_personal, true);
 default(contacts_after) -> default_value(contacts_after, 0);
 default(index_cleanup) -> default_value(index_cleanup, true);

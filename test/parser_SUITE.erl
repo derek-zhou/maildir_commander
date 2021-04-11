@@ -10,6 +10,8 @@ test_basic(_Config) ->
     [hi, 'there-sth'] = mc_sexp:parse("(hi there-sth)"),
     [{<<"a">>, 1}, {<<"b">>, 2}] = mc_sexp:parse("(:a 1 :b 2)"),
     [cmd, {<<"b">>, 2}] = mc_sexp:parse("(cmd :b 2)"),
+    %% the value in plist can be a atom start with :
+    [cmd, {<<"b">>, ':ok'}] = mc_sexp:parse("(cmd :b :ok)"),
     [<<"cmd">> | 2] = mc_sexp:parse("(\"cmd\" . 2)").
 
 test_print(_Config) ->

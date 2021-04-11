@@ -93,7 +93,7 @@ parse_atom(Str) ->
 	[] -> throw(incomplete);
 	[$. | Rest] -> {dot, Rest};
 	_ ->
-	    {Leading, Trailing} = string:take(Str, "-" ++ lists:seq($a,$z)),
+	    {Leading, Trailing} = string:take(Str, ":-" ++ lists:seq($a,$z)),
 	    case unicode:characters_to_list(Leading) of
 		"" -> throw(incomplete);
 		Word -> {list_to_atom(Word), Trailing}

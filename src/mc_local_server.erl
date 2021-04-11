@@ -54,6 +54,7 @@ service_loop(Buffer, Sock) ->
 	    gen_tcp:send(Sock, issue_command(Command, Args)),
 	    gen_tcp:shutdown(Sock, write);
 	{Command, Remain} ->
+	    ?LOG_DEBUG("received Command: ~ts", [mc_sexp:to_string(Command)]),
 	    ok = mc_server:command(Command),
 	    send_sexp_loop(mc_mu_api:fun_ending(Command), Sock),
 	    service_loop([Remain], Sock)
@@ -144,6 +145,7 @@ send_sexp_loop(Test_done, Sock) ->
 
 send_sexp(Sexp, Sock) ->
     Serialized = mc_sexp:to_string(Sexp),
+    ?LOG_DEBUG("sending response: ~ts", [Serialized]),
     Length = iolist_size(Serialized),
     Length_bin = integer_to_binary(Length, 16),
     gen_tcp:send(Sock, [<<16#FE, Length_bin/binary, 16#FF>>, Serialized]).

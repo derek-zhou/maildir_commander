@@ -95,7 +95,7 @@ parse_atom(Str) ->
 	_ ->
 	    {Leading, Trailing} = string:take(Str, ":-" ++ lists:seq($a,$z)),
 	    case unicode:characters_to_list(Leading) of
-		"" -> throw(incomplete);
+		"" -> error("no legal atom found");
 		Word -> {list_to_atom(Word), Trailing}
 	    end
     end.

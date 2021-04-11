@@ -1,9 +1,9 @@
 -module(parser_SUITE).
 -include_lib("common_test/include/ct.hrl").
 -export([all/0]).
--export([test_basic/1, test_print/1, test_special/1]).
+-export([test_basic/1, test_print/1, test_special/1, test_illegal_atom/1]).
 
-all() -> [test_basic, test_print, test_special].
+all() -> [test_basic, test_print, test_special, test_illegal_atom].
 
 test_basic(_Config) ->
     27 = mc_sexp:parse("27"),
@@ -29,6 +29,18 @@ parse_print_verify(Str) ->
     Str2 = mc_sexp:to_string(Sexp),
     true = string:equal(Str, Str2).
 
+test_illegal_atom(_Config) ->
+    try mc_sexp:parse("(:a A)") of
+	_ -> error("Shouldn't be")
+    catch
+	throw:_ -> error("Shouldn't be");
+	error:_ -> ok
+    end.
+
+		       
+	    
+
+	    
 
     
 

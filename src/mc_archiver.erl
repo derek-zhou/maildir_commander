@@ -25,7 +25,7 @@ handle_call(ping, _From, State) -> {reply, ok, State}.
 
 run_archiving(_State) ->
     ?LOG_NOTICE("Starting archiving run"),
-    case maildir_commander:find("maildir:/", true, "date", false, false, false) of
+    case maildir_commander:find("maildir:/", true, ':date', false, false, false) of
 	{error, Reason} ->
 	    ?LOG_WARNING("query error: ~ts", [Reason]),
 	    ok;

@@ -32,7 +32,7 @@ index_loop() ->
 -spec add(string()) -> ok | {error, binary()}.
 add(Path) ->
     %% the sent function name is from mu. add return too much crap
-    Command = mc_mu_api:sent(Path),
+    Command = mc_mu_api:sent(unicode:characters_to_binary(Path)),
     mc_server:command(Command),
     add_loop().
 
@@ -106,7 +106,8 @@ find(Query, Threads, Sort_field, Descending, Skip_dups) ->
 -spec find(string(), boolean(), string(), boolean(), boolean(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
-    Command = mc_mu_api:find(Query, Threads, Sort_field, Descending,
+    Command = mc_mu_api:find(unicode:characters_to_binary(Query),
+			     Threads, Sort_field, Descending,
 			     mc_configer:default(max_num),
 			     Skip_dups, Include_related),
     ok = mc_server:command(Command),

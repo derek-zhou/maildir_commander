@@ -4,6 +4,17 @@
 
 default(index_path) ->
     default_value(index_path, os:getenv("HOME") ++ "/Maildir");
+default(my_addresses) ->
+    default_value(my_addresses,
+		  fun() ->
+			  case file:read_file("/etc/mailname") of
+			      {error, _Reason} -> [];
+			      {ok, Binary} ->
+				  Trimmed = string:trim(Binary, trailing),
+				  User = os:getenv("USER"),
+				  [unicode:characters_to_list([User, $@, Trimmed])]
+			  end
+		  end);
 default(threading) -> default_value(threading, false);
 default(sort_field) -> default_value(sort_field, ':date');
 default(max_num) -> default_value(max_num, 1024);

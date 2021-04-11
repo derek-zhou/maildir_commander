@@ -9,7 +9,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 -export([append/3, finalize/1, flatmap/2, do_while/3, root_list/1,
-	 children/2, parent/2, graft/3, any/3]).
+	 children/2, parent/2, graft/3, any/3, first/1, next/2, prev/2]).
 
 -type t() :: {list(), map(), map()}.
 
@@ -63,7 +63,7 @@ graft(Item, undefined, {Root_list, Children_map, Parent_map}) ->
     case maps:get(Item, Parent_map, undefined) of
 	undefined -> {Root_list, Children_map, Parent_map};
 	Old_parent ->
-	    { [Item | Root_list],
+	    { Root_list ++ [Item],
 	      maps:put( Old_parent,
 		        lists:delete(Item, maps:get(Old_parent, Children_map)),
 		        Children_map ),
@@ -74,7 +74,7 @@ graft(Item, Parent, {Root_list, Children_map, Parent_map}) ->
 	Parent -> {Root_list, Children_map, Parent_map};
 	undefined ->
 	    { lists:delete(Item, Root_list),
-	      maps:put(Parent, [Item | maps:get(Parent, Children_map, [])],
+	      maps:put(Parent, maps:get(Parent, Children_map, []) ++ [Item],
 		       Children_map),
 	      maps:put(Item, Parent, Parent_map) };
 	Old_parent ->
@@ -83,7 +83,7 @@ graft(Item, Parent, {Root_list, Children_map, Parent_map}) ->
 			 #{ Old_parent =>
 				lists:delete(Item, maps:get(Old_parent, Children_map)),
 			    Parent =>
-				[Item | maps:get(Parent, Children_map, [])] }),
+				maps:get(Parent, Children_map, []) ++ [Item] }),
 	      maps:put(Item, Parent, Parent_map) }
     end.
 
@@ -99,14 +99,45 @@ any(Pred, Item, {_Root_list, Children_map, _Parent_map}) ->
 	    any_in_list(Pred, maps:get(Item, Children_map, []), Children_map)
     end.
 
+%% given a Tree, return the first of the root list
+-spec first(t()) -> undefined | term().
+first({[], _, _}) -> undefined;
+first({[Head | _Tail], _, _}) -> Head.
+
+%% given an Item and a Tree, return the next Item in tree order
+%% the tree order is defined as:
+%% if the Item has children, it is the first of its children
+%% if the Item has sibling, it is the next of its sibling
+%% if there is no sibling, go up until there is
+-spec next(term(), t()) -> undefined | term(). 
+next(Item, {Root_list, Children_map, Parent_map}) ->
+    case maps:get(Item, Children_map, []) of
+	[Head | _] -> Head;
+	_ -> next_sibling(Item, Root_list, Children_map, Parent_map)
+    end.
+
+%% given an Item and a Tree, return the previous Item in tree order
+%% the tree order is defined as:
+%% if the Item has sibling, it is the tail of previous sibling
+%% if there is no sibling, return the parent
+-spec prev(term(), t()) -> undefined | term().
+prev(Item, {Root_list, Children_map, Parent_map}) ->
+    case maps:get(Item, Parent_map, undefined) of
+	undefined ->
+	    prev_sibling(Item, undefined, Root_list, Children_map);
+	Parent ->
+	    prev_sibling(Item, Parent, maps:get(Parent, Children_map, []),
+			 Children_map)
+    end.
+
 %% private functions
 flatmap(_Fun, _Level, [], _Children_map) -> [];
 flatmap(Fun, Level, [Item | Tail], Children_map) ->
     case maps:get(Item, Children_map, []) of
 	[] -> [Fun(Item, Level) | flatmap(Fun, Level, Tail, Children_map)];
 	Children ->
-	    [[Fun(Item, Level) | flatmap(Fun, Level + 1, Children, Children_map)] |
-	     flatmap(Fun, Level, Tail, Children_map)]
+	    [Fun(Item, Level) | flatmap(Fun, Level + 1, Children, Children_map)] ++
+	     flatmap(Fun, Level, Tail, Children_map)
     end.
 
 do_while(_Action, Count, [], _Children_map) -> {ok, Count};
@@ -160,4 +191,36 @@ any_in_list(Pred, [Head | Tail], Children_map) ->
 		true -> true;
 		false -> any_in_list(Pred, Tail, Children_map)
 	    end
+    end.
+
+next_sibling(Item, Root_List, Children_map, Parent_map) ->
+    case maps:get(Item, Parent_map, undefined) of
+	undefined -> next_in_list(Item, Root_List);
+	Parent ->
+	    case next_in_list(Item, maps:get(Parent, Children_map, [])) of
+		undefined -> next_sibling(Parent, Root_List, Children_map, Parent_map);
+		Sibling -> Sibling
+	    end
+    end.
+
+next_in_list(_Item, []) -> undefined;
+next_in_list(Item, [Item]) -> undefined; 
+next_in_list(Item, [Item, Next | _]) -> Next; 
+next_in_list(Item, [_Head | Tail]) -> next_in_list(Item, Tail).
+
+prev_sibling(Item, Parent, List, Children_map) ->
+    case prev_in_list(Item, List) of
+	undefined -> Parent;
+	Sibling -> tail_of(Sibling, Children_map)
+    end.
+    
+prev_in_list(_Item, []) -> undefined;
+prev_in_list(Item, [Item | _]) -> undefined; 
+prev_in_list(Item, [Head, Item | _]) -> Head; 
+prev_in_list(Item, [_Head | Tail]) -> prev_in_list(Item, Tail). 
+
+tail_of(Item, Children_map) ->
+    case maps:get(Item, Children_map, []) of
+	[] -> Item;
+	List -> tail_of(lists:last(List), Children_map)
     end.

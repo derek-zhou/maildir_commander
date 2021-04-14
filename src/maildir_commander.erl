@@ -82,7 +82,11 @@ contacts_loop() ->
     end.
 
 %% return all mail matching the query. return a tree of docids, and a map from docid to mail
--spec find(string()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
+-spec find(string()|integer()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
+find(Docid) when is_integer(Docid) ->
+    Command = mc_mu_api:view(Docid),
+    ok = mc_server:command(Command),
+    view_loop();
 find(Query) -> find(Query, false).
 
 -spec find(string(), boolean()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
@@ -112,6 +116,13 @@ find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
 			     Skip_dups, Include_related),
     ok = mc_server:command(Command),
     find_loop([], #{}).
+
+view_loop() ->
+    receive
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
+	{async, [{<<"view">>, [{<<"docid">>, Docid} | Mail ] } | _ ]} ->
+	    {ok, {[Docid], #{}, #{}}, #{Docid => parse_mail_headers(Mail)}}
+    end.
 
 find_loop(Tree, Mails) ->
     receive

@@ -78,7 +78,12 @@ issue_command(<<"index">>, _Args) ->
 	    io_lib:format("~B messages indexed~n", [Num])
     end;
 issue_command(<<"find">>, [Query]) ->
-    print_tree(maildir_commander:find(Query));
+    case string:to_integer(Query) of
+	{Int, <<"">>} ->
+	    print_tree(maildir_commander:find(Int));
+	_->
+	    print_tree(maildir_commander:find(Query))
+    end;
 issue_command(<<"findx">>, [Query]) ->
     print_tree(maildir_commander:find(Query, true));
 issue_command(<<"scrub">>, [Path]) ->

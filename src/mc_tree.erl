@@ -8,8 +8,9 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([append/3, finalize/1, flatmap/2, do_while/3, root_list/1,
-	 children/2, parent/2, graft/3, any/3, first/1, next/2, prev/2]).
+-export([append/3, finalize/1, flatmap/2, traverse/2, traverse/3,
+	 root_list/1, any/3, children/2, parent/2, collapse/1, graft/3,
+	 first/1, next/2, prev/2]).
 
 -type t() :: {list(), map(), map()}.
 
@@ -33,12 +34,17 @@ finalize(Tree) ->
 flatmap(Fun, {Root_list, Children_map, _Parent_map}) ->
     flatmap(Fun, 0, Root_list, Children_map).
 
+%% do action on every node in the tree. The action should return ok
+%% when successful. return count of successful actions
+-spec traverse(function(), t()) -> integer().
+traverse(Action, {Root_list, Children_map, _Parent_map}) ->
+    traverse(Action, 0, Root_list, Children_map).
+
 %% do action on every node that are decendent of list. The action should return ok
-%% when successful. If any action return non-ok, return the non-ok value right there
-%% otherwise, return {ok, Count}
--spec do_while(function(), list(), t()) -> {ok, integer} | term().
-do_while(Action, List, {_Root_list, Children_map, _Parent_map}) ->
-    do_while(Action, 0, List, Children_map).
+%% when successful. return count of successful actions
+-spec traverse(function(), list(), t()) -> integer().
+traverse(Action, List, {_Root_list, Children_map, _Parent_map}) ->
+    traverse(Action, 0, List, Children_map).
 
 %% return the root list
 -spec root_list(t()) -> list().
@@ -130,6 +136,21 @@ prev(Item, {Root_list, Children_map, Parent_map}) ->
 			 Children_map)
     end.
 
+%% collapse a tree so it is shallower and fatter. For example:
+%%  A -> B -> C -> D 
+%%  becomes 
+%%  A -> B
+%%    |> C
+%%    \> D
+%%  Assume the parent of A has > 1 fanouts
+-spec collapse(t()) -> t().
+collapse({[Head], Children_map, _Parent_map}) ->
+    {New_rl, New_cm} = collapse_node_from(Head, [], Children_map),
+    {New_rl, New_cm, parent_map(New_rl, New_cm)};
+collapse({Root_list, Children_map, _Parent_map}) ->
+    New_cm = lists:foldl(fun collapse_node/2, Children_map, Root_list),
+    {Root_list, New_cm, parent_map(Root_list, New_cm)}.
+
 %% private functions
 flatmap(_Fun, _Level, [], _Children_map) -> [];
 flatmap(Fun, Level, [Item | Tail], Children_map) ->
@@ -140,19 +161,15 @@ flatmap(Fun, Level, [Item | Tail], Children_map) ->
 	     flatmap(Fun, Level, Tail, Children_map)
     end.
 
-do_while(_Action, Count, [], _Children_map) -> {ok, Count};
-do_while(Action, Count, [Item | Tail], Children_map) ->
+traverse(_Action, Count, [], _Children_map) -> Count;
+traverse(Action, Count, [Item | Tail], Children_map) ->
+    Count1 = traverse(Action, Count,
+		      maps:get(Item, Children_map, []),
+		      Children_map),
+    Count2 = traverse(Action, Count1, Tail, Children_map),
     case Action(Item) of
-	ok ->
-	    case do_while(Action, Count + 1,
-			  maps:get(Item, Children_map, []),
-			  Children_map) of
-		{ok, Count2} -> do_while(Action, Count2, Tail, Children_map);
-		Err -> Err
-	    end;
-	{error, Reason} ->
-	    ?LOG_WARNING("Action failed: ~ts", [Reason]),
-	    {error, Reason}
+	ok -> Count2 + 1;
+	_ -> Count2
     end.
 
 nodes_to_items(List) -> nodes_to_items([], List).
@@ -223,4 +240,32 @@ tail_of(Item, Children_map) ->
     case maps:get(Item, Children_map, []) of
 	[] -> Item;
 	List -> tail_of(lists:last(List), Children_map)
+    end.
+
+parent_map([], _Children_map) -> #{};
+parent_map([Head | Tail], Children_map) ->
+    Children = maps:get(Head, Children_map, []),
+    Map1 = maps:from_list(lists:map(
+			    fun (Each) -> {Each, Head} end,
+			    Children)),
+    Map2 = parent_map(Children, Children_map),
+    Map3 = parent_map(Tail, Children_map),
+    maps:merge(Map1, maps:merge(Map2, Map3)).
+
+collapse_node_from(Node, List, Children_map) ->
+    case maps:get(Node, Children_map, []) of
+	[Head] ->
+	    collapse_node_from(Head, [Node | List], maps:remove(Node, Children_map));
+	Clist ->
+	    { lists:reverse([Node | List]),
+	      lists:foldl(fun collapse_node/2, Children_map, Clist) }
+    end.
+
+collapse_node(Node, Children_map) ->
+    case maps:get(Node, Children_map, []) of
+	[Head] ->
+	    {List, New_map} = collapse_node_from(Head, [], Children_map),
+	    maps:put(Node, List, New_map);
+	List ->
+	    lists:foldl(fun collapse_node/2, Children_map, List)
     end.

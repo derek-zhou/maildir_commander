@@ -50,12 +50,10 @@ run_archiving(_State) ->
 		lists:partition(
 		  fun (Each) -> mc_tree:any(Is_important, Each, Tree) end,
 		  Expired_list),
-	    {ok, Delete_count} =
-		delete_conversations(Junk_list, Tree, Messages),
-	    {ok, Archive_count} =
-		archive_conversations(Archive_list, Archive, Tree, Messages),
 	    ?LOG_NOTICE("Finishing archiving run, ~B deleted, ~B archived",
-		       [Delete_count, Archive_count]),
+		       [ delete_conversations(Junk_list, Tree, Messages),
+			 archive_conversations(Archive_list, Archive,
+					       Tree, Messages) ]),
 	    ok
     end.
 
@@ -66,7 +64,7 @@ is_important(#{from := [ _Name | Addr ]}, My_addresses) ->
     sets:is_element(binary_to_list(Addr), My_addresses).
 
 delete_conversations(List, Tree, Messages) ->
-    mc_tree:do_while(
+    mc_tree:traverse(
       fun(Docid) ->
 	      #{path := Path} = maps:get(Docid, Messages),
 	      ?LOG_NOTICE("deleting mail (~B) ~ts", [Docid, Path]),
@@ -74,7 +72,7 @@ delete_conversations(List, Tree, Messages) ->
       end, List, Tree).
 
 archive_conversations(List, Archive, Tree, Messages) ->
-    mc_tree:do_while(
+    mc_tree:traverse(
       fun(Docid) ->
 	      #{path := Path} = maps:get(Docid, Messages),
 	      ?LOG_NOTICE("archiving mail (~B) ~ts", [Docid, Path]),

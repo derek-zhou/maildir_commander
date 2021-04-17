@@ -140,7 +140,15 @@ find_loop(Tree, Mails) ->
 parse_thread_level(Headers) ->
     case proplists:get_value(<<"thread">>, Headers) of
 	undefined -> 0;
-	Thread -> proplists:get_value(<<"level">>, Thread, 0)
+	Thread ->
+	    case proplists:get_value(<<"level">>, Thread, 0) of
+		0 -> 0;
+		Level ->
+		    case proplists:get_value(<<"empty-parent">>, Thread, nil) of
+			t -> 0;
+			_ -> Level
+		    end
+	    end
     end.
 
 parse_mail_headers(Headers) ->

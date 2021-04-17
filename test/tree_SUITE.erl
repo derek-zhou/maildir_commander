@@ -1,9 +1,9 @@
 -module(tree_SUITE).
 -include_lib("common_test/include/ct.hrl").
 -export([all/0]).
--export([test_basic/1, test_graft/1]).
+-export([test_basic/1, test_graft/1, test_collapse/1]).
 
-all() -> [test_basic, test_graft].
+all() -> [test_basic, test_graft, test_collapse].
 
 test_basic(_Config) ->
     Data = [{1, 0}, {2, 1}, {3, 1}, {4, 0}, {5, 1}, {6, 2}],
@@ -34,7 +34,19 @@ test_graft(_Config) ->
     [1, 4] = R2,
     #{1 := [2, 3, 6], 4 := [5]} = C2,
     #{2 := 1, 3 := 1, 6 := 1, 5 := 4} = P2.
-    
+
+test_collapse(_config) ->
+    Data = [{1, 0}, {2, 1}, {3, 2}, {4, 0}, {5, 1}, {6, 2}, {7, 1}],
+    Tin = lists:foldl(
+	    fun ({N, L}, T) ->
+		    mc_tree:append(N, L, T)
+	    end, [], Data),
+    Tree = mc_tree:finalize(Tin),
+    {R1, C1, P1} = mc_tree:collapse(Tree),
+    [1, 4] = R1,
+    #{1 := [2, 3], 4 := [5, 7], 5 := [6]} = C1,
+    #{2 := 1, 3 := 1, 5 := 4, 6 := 5, 7 := 4} = P1.
+
 trace_tree(Fun_next, Head, Tree) -> 
     case Fun_next(Head, Tree) of
 	undefined -> [Head];

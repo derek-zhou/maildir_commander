@@ -4,7 +4,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, scrub_mime/1, set_mime_parent/2]).
+-export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, fetch_mime/1, scrub_mime/1,
+	 set_mime_parent/2]).
 -export([maildir_path/2]).
 
 -export([read_text_file/1, write_text_file/2]).
@@ -38,6 +39,13 @@ mend(How, Path, Maildir) ->
 		{error, Reason} -> {error, Reason};
 		{ok, New_path} -> maildir_commander:add(New_path)
 	    end
+    end.
+
+-spec fetch_mime(string()) -> tuple() | {error, binary()}.
+fetch_mime(Path) ->
+    case read_text_file(Path) of
+	{error, Reason} -> {error, Reason};
+	{ok, Binary} -> mimemail:decode(Binary)
     end.
 
 %% mend only the leaf mime parts

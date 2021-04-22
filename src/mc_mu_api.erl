@@ -51,12 +51,12 @@ move(Id, Maildir) ->
     move(Id, Maildir, undefined).
 
 move(Id, Maildir, Flags) ->
-    move(Id, Maildir, Flags, mc_configer:default(move_new_name)).
+    move(Id, Maildir, Flags, mc_configer:default(move_rename)).
 
-move(Id, Maildir, Flags, Newname) -> 
-    move(Id, Maildir, Flags, Newname, mc_configer:default(move_no_view)).
+move(Id, Maildir, Flags, Rename) ->
+    move(Id, Maildir, Flags, Rename, mc_configer:default(move_no_view)).
 
-move(Id, Maildir, Flags, Newname, No_view) ->
+move(Id, Maildir, Flags, Rename, No_view) ->
     [move,
      if is_integer(Id) -> {<<"docid">>, Id};
 	true -> {<<"msgid">>, Id}
@@ -67,7 +67,7 @@ move(Id, Maildir, Flags, Newname, No_view) ->
      if Maildir == undefined -> {};
 	true -> {<<"maildir">>, Maildir}
      end,
-     {<<"newname">>, Newname},
+     {<<"rename">>, Rename},
      {<<"no-view">>, No_view}
     ].
 

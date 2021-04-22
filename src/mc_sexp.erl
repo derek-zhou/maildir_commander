@@ -153,7 +153,8 @@ parse_list(Str) ->
 	    end
     end.
 
--spec to_string(any()) -> unicode:chardata(). 
+-spec to_string(any()) -> unicode:chardata().
+to_string({}) -> <<"">>;
 to_string(I) when is_integer(I) -> integer_to_binary(I);
 to_string(false) -> <<"nil">>;
 to_string(true) -> <<"t">>;

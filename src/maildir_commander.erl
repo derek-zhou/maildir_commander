@@ -4,8 +4,8 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, delete/1, contacts/0,
-	 find/1, find/2, find/3, find/4, find/5, find/6,
+-export([index/0, add/1, delete/1, contacts/0, full_mail/1,
+	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2,
 	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2,
 	 archive/0]).
 
@@ -81,12 +81,21 @@ contacts_loop() ->
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
-%% return all mail matching the query. return a tree of docids, and a map from docid to mail
--spec find(string()|integer()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
-find(Docid) when is_integer(Docid) ->
+%% return full body of a mail in a tuple {Headers, Text, Html}
+-spec full_mail(integer()) -> {map(), binary(), binary()} | {error, binary()}.
+full_mail(Docid) ->
     Command = mc_mu_api:view(Docid),
     ok = mc_server:command(Command),
-    view_loop();
+    case view_loop() of
+	{error, Msg} -> {error, Msg};
+	Mail ->
+	    { parse_mail_headers(Mail),
+	      proplists:get_value(<<"body-txt">>, Mail, <<"">>),
+	      proplists:get_value(<<"body-html">>, Mail, <<"">>) }
+    end.
+
+%% return all mail matching the query. return a tree of docids, and a map from docid to mail
+-spec find(string()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query) -> find(Query, false).
 
 -spec find(string(), boolean()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
@@ -117,11 +126,24 @@ find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
     ok = mc_server:command(Command),
     find_loop([], #{}).
 
+%% change the flags of a mail
+-spec flag(integer(), string()) -> ok | {error, binary()}.
+flag(Docid, Flags) ->
+    Command = mc_mu_api:move(Docid, undefined,
+			     unicode:characters_to_binary(Flags)),
+    ok = mc_server:command(Command),
+    move_loop().
+
+move_loop() ->
+    receive
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
+	{async, [{<<"update">>, _} | _ ]} -> ok
+    end.
+
 view_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"view">>, [{<<"docid">>, Docid} | Mail ] } | _ ]} ->
-	    {ok, {[Docid], #{}, #{}}, #{Docid => parse_mail_headers(Mail)}}
+	{async, [{<<"view">>, [{<<"docid">>, _Docid} | Mail ] } | _ ]} -> Mail
     end.
 
 find_loop(Tree, Mails) ->

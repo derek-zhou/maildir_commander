@@ -21,7 +21,7 @@ default(max_num) -> default_value(max_num, 1024);
 default(descending_sort) -> default_value(descending_sort, true);
 default(skip_dups) -> default_value(skip_dups, false);
 default(include_related) -> default_value(include_related, false);
-default(move_new_name) -> default_value(move_new_name, false);
+default(move_rename) -> default_value(move_rename, false);
 default(move_no_view) -> default_value(move_no_view, false);
 default(extract_images) -> default_value(extract_images, false);
 default(decrypt) -> default_value(decrypt, false);

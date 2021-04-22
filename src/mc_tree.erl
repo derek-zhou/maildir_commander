@@ -8,7 +8,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([append/3, finalize/1, flatmap/2, traverse/2, traverse/3,
+-export([append/3, finalize/1, flatmap/2, traverse/2, traverse/3, single/1,
 	 root_list/1, any/3, children/2, parent/2, collapse/1, graft/3,
 	 first/1, next/2, prev/2]).
 
@@ -28,6 +28,10 @@ finalize(Tree) ->
     { nodes_to_items(Tree),
       nodes_to_children_map(Tree),
       nodes_to_parent_map(undefined, Tree) }.
+
+%% return a degenerated tree with one node
+-spec single(term()) -> t().
+single(Node) -> { [Node], #{}, #{} }.
 
 %% return a list that apply Fun(Each, Level) to each item
 -spec flatmap(function(), t()) -> list().

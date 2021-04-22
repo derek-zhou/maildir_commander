@@ -4,8 +4,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, fetch_mime/1, scrub_mime/1,
-	 set_mime_parent/2]).
+-export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, scrub_mime/1,
+	 fetch_mime/1, fetch_content/3, set_mime_parent/2]).
 -export([maildir_path/2]).
 
 -export([read_text_file/1, write_text_file/2]).
@@ -47,6 +47,14 @@ fetch_mime(Path) ->
 	{error, Reason} -> {error, Reason};
 	{ok, Binary} -> mimemail:decode(Binary)
     end.
+
+-spec fetch_content(binary(), binary(), tuple()) -> binary() | undefined.
+fetch_content(Type, SubType, {Type, SubType, _Headers, _Params, Body})
+  when is_binary(Body) -> Body;
+fetch_content(Type, SubType, {_Type, _SubType, _Headers, _params, List})
+  when is_list(List) ->
+    fetch_content_from_list(Type, SubType, List);
+fetch_content(_, _, _) -> undefined.
 
 %% mend only the leaf mime parts
 
@@ -203,3 +211,11 @@ set_parent(List, [{<<"References">>, _} | Tail], Pid) ->
     set_parent(List, Tail, Pid);
 set_parent(List, [Head | Tail], Pid) ->
     set_parent([Head | List], Tail, Pid).
+
+fetch_content_from_list(_, _, []) -> undefined;
+fetch_content_from_list(Type, SubType, [Head | Tail]) ->
+    case fetch_content(Type, SubType, Head) of
+	undefined -> fetch_content_from_list(Type, SubType, Tail);
+	Content -> Content
+    end.
+

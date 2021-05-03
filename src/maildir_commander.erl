@@ -184,6 +184,7 @@ parse_mail_headers(Headers) ->
        to => proplists:get_value(<<"to">>, Headers, []),
        cc => proplists:get_value(<<"cc">>, Headers, []),
        bcc => proplists:get_value(<<"bcc">>, Headers, []),
+       references => proplists:get_value(<<"references">>, Headers, []),
        date => case proplists:get_value(<<"date">>, Headers) of
 		   undefined -> 0;
 		   [H, L | _ ] -> H*65536+L

@@ -1,4 +1,5 @@
 -module(mc_configer).
+-define(APP, maildir_commander).
 
 -export([default/1]).
 
@@ -38,15 +39,9 @@ default(socket_file) ->
 %% return the config value with default. Default can be a value or a zero arity function
 %% to compute the default value
 default_value(Key, Default) when is_function(Default, 0) ->
-    {ok, App} = application:get_application(?MODULE),
-    case application:get_env(App, Key) of
+    case application:get_env(?APP, Key) of
 	undefined -> Default();
 	{ok, Val} -> Val
     end;
 default_value(Key, Default) ->
-    {ok, App} = application:get_application(?MODULE),
-    case application:get_env(App, Key) of
-	undefined -> Default;
-	{ok, Val} -> Val
-    end.
-
+    application:get_env(?APP, Key, Default).

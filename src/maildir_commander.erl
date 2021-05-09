@@ -231,9 +231,21 @@ orphan(Path) ->
 orphan(Path, Maildir) ->
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path, Maildir).
 
-%% trigger an archive run in the background
+%% archive old mails according to rules
 -spec archive() -> ok.
-archive() -> mc_archiver:trigger().
+archive() ->
+    ok = mc_archiver:run(),
+    archive_loop(),
+    ok.
+
+archive_loop() ->
+    receive
+	{async, Msg} ->
+	    case string:prefix(Msg, "Done") of
+		nomatch -> archive_loop();
+		_ -> ok
+	    end
+    end.
 
 %% private functions
 msgid_str(undefined) -> undefined;

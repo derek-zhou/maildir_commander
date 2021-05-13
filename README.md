@@ -14,7 +14,7 @@ maildir_commander can be used as a dependancy of a larger application or a stand
 
 The `mu server` will be ran on demand. If theere is nothing to do for some time (60 seconds by default) the `mu server` will be shut dowm to save memory. The on/off of `mu server` is automatic and user does not need to care about it except some small startup latency every once in a while. 
 
-## the socket
+## the local socket
 
 maildir_commander will also listen on a Unix domain socket `$HOME/.mc_server_sock`. The socket once connected, behave exactly like `mu server`. All commands are passed through to the shared `mu server` instance, with the only exception of the `cmd:quit` command, which is locally handled. so:
 
@@ -22,7 +22,7 @@ maildir_commander will also listen on a Unix domain socket `$HOME/.mc_server_soc
 $ socat UNIX-CONNECT:$HOME/.mc_server_sock -
 ```
 
-behave exactly like `mu server`, except now you can run multiple instances. I have a shell script in `scripts/mc` that can be a drop in repleacement of mu (now only `mc server` is supported, in the future I plan to re-implement all mu client side sub-commands.
+behave exactly like `mu server`, except now you can run multiple instances. I have a shell script in `scripts/mc` that can be a drop in repleacement of mu (now only `mc server` is supported, in the future I plan to re-implement more mu client side sub-commands). If you run maildir_commander as a daemon, `mu` will not work. To continue use `mu4e`, you would have to configure `mu4e` to use `mc` as the alternative `mu` binary.
 
 ## the watcher
 
@@ -34,10 +34,16 @@ The watcher will also move new mails to the cur dir as per [maildir standard](ht
 maildir_empty_new = no
 ```
 
+## the archiver
+
+`maildir_commander` contains an email archiver that scan your inbox and archive emailto `.Archive` maildir, based on the following rules:
+
+* Mails are grouped into conversations first. Conversation that have emails within 30 days will be left alone. For all other conversations:
+* If a conversation contains emails from me (as defined by the `my_addresses` configuration key), archive the whole conversation, will all attachments stripped off to save diskspace
+* If the conversation has nothing to do with me, delete the whole conversation
+
+To run the archiver, you just run `mc archive`. Most likely you have it in a nightly cronjob. Mails archived will still be searchable, just not in the inbox anymore. Right now the rules are not tunable, or rather, it is tuned to suit my need. My goal is to keep my inbox at constant size with minimal manual intervention. 
+
 ## Future works
 
-maildir_commander is meant to be used as the lower layer of more sofisticated MUAs such as a web client, an IMAP client, etc, so they can run along side with the command line client and mu4e.
-
-
-
-
+maildir_commander is meant to be the lower layer of more sofisticated MUAs such as a web client, an IMAP client, etc, so they can run along side with the command line client and `mu4e`. In most cases you want to install [LIV](https://github.com/derek-zhou/liv), which is a full webmail client based on Phoenix LiveView. 

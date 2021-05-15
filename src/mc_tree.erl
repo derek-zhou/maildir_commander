@@ -10,7 +10,7 @@
 
 -export([append/3, finalize/1, flatmap/2, traverse/2, traverse/3, single/1,
 	 root_list/1, any/3, children/2, parent/2, collapse/1, graft/3,
-	 first/1, next/2, prev/2]).
+	 first/1, last/1, next/2, prev/2]).
 
 -type t() :: {list(), map(), map()}.
 
@@ -113,6 +113,12 @@ any(Pred, Item, {_Root_list, Children_map, _Parent_map}) ->
 -spec first(t()) -> undefined | term().
 first({[], _, _}) -> undefined;
 first({[Head | _Tail], _, _}) -> Head.
+
+%% given a Tree, return the last of the tree in tree order
+-spec last(t()) -> undefined | term ().
+last({[], _, _}) -> undefined;
+last({Root_list, Children_map, _}) ->
+    tail_of(lists:last(Root_list), Children_map).
 
 %% given an Item and a Tree, return the next Item in tree order
 %% the tree order is defined as:

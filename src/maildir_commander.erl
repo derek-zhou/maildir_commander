@@ -107,14 +107,13 @@ find(Query, Threads, Sort_field) -> find(Query, Threads, Sort_field, false).
 -spec find(string(), boolean(), string(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query, Threads, Sort_field, Descending) ->
-    find(Query, Threads, Sort_field, Descending,
-	 Threads orelse mc_configer:default(skip_dups)).
+    find(Query, Threads, Sort_field, Descending, mc_configer:default(skip_dups)).
 
 -spec find(string(), boolean(), string(), boolean(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.
 find(Query, Threads, Sort_field, Descending, Skip_dups) ->
     find(Query, Threads, Sort_field, Descending, Skip_dups,
-	 Threads orelse mc_configer:default(include_related)).
+	 mc_configer:default(include_related)).
 
 -spec find(string(), boolean(), string(), boolean(), boolean(), boolean()) ->
 	  {ok, mc_tree:t(), map()} | {error, binary()}.

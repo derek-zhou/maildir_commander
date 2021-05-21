@@ -5,7 +5,8 @@
 -include_lib("kernel/include/logger.hrl").
 
 -export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, scrub_mime/1,
-	 fetch_mime/1, fetch_content/3, set_mime_parent/2]).
+	 is_attachment/1, attachment_info/1,
+	 fetch_mime/1, all_leaf_mime/1, fetch_content/3, set_mime_parent/2]).
 -export([maildir_path/2]).
 
 -export([read_text_file/1, write_text_file/2]).
@@ -47,6 +48,36 @@ fetch_mime(Path) ->
 	{error, Reason} -> {error, Reason};
 	{ok, Binary} -> mimemail:decode(Binary)
     end.
+
+-spec all_leaf_mime(tuple()) -> [tuple()].
+all_leaf_mime(Mime = {_Type, _SubType, _Headers, _Params, Body})
+ when is_binary(Body) ->
+    [Mime];
+all_leaf_mime({_Type, _SubType, _Headers, _Params, Body}) when is_tuple(Body) ->
+    all_leaf_mime(Body);
+all_leaf_mime({_Type, _SubType, _Headers, _Params, Body}) when is_list(Body) ->
+    lists:flatmap(fun all_leaf_mime/1, Body).
+
+-spec is_attachment(tuple()) -> boolean().
+is_attachment({_Type, _SubType, _Headers, #{disposition := <<"attachment">>}, _Body}) ->
+    true;
+is_attachment({_Type, _SubType, _Headers, #{content_type_params := Params}, _Body}) ->
+    case proplists:get_value(<<"name">>, Params) of
+	undefined -> false;
+	_Name -> true
+    end;
+is_attachment(_) -> false.
+
+-spec attachment_info(tuple()) -> tuple().
+attachment_info({Type, SubType, _Headers,
+		 #{disposition := <<"attachment">>,
+		   disposition_params := Params},
+		 Body}) ->
+    {proplists:get_value(<<"filename">>, Params), Type, SubType, Body};
+attachment_info({Type, SubType, _Headers,
+		 #{content_type_params := Params},
+		 Body}) ->
+    {proplists:get_value(<<"name">>, Params), Type, SubType, Body}.
 
 -spec fetch_content(binary(), binary(), tuple()) -> binary() | undefined.
 fetch_content(Type, SubType, {Type, SubType, _Headers, _Params, Body})

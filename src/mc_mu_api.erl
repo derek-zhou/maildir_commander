@@ -8,7 +8,7 @@
 	 sent/1,
 	 view/1, view/2, view/3, view/4, view/5,
 	 compose/0, compose/2, compose/3,
-	 extract/3, extract/4, extract/5, extract/6, extract/7,
+	 extract/3, extract/4, extract/5, extract/6,
 	 remove/1,
 	 mkdir/1,
 	 ping/0,
@@ -111,42 +111,33 @@ compose(Type, Docid, Decrypt)
      {<<"docid">>, Docid},
      {<<"decrypt">>, Decrypt}].
 
+extract(temp, Docid, Index) ->
+    extract(temp, Docid, Index, undefined);
 extract(open, Docid, Index) ->
     extract(open, Docid, Index, mc_configer:default(decrypt)).
 
 extract(temp, Docid, Index, What) ->
     extract(temp, Docid, Index, What, undefined);
-extract(open, Docid, Index, Decrypt) ->
-    extract(open, Docid, Index, Decrypt, mc_configer:default(verify));
 extract(save, Docid, Index, Path) ->
-    extract(save, Docid, Index, Path, mc_configer:default(decrypt)).
-
-extract(temp, Docid, Index, What, Param) ->
-    extract(temp, Docid, Index, What, Param, mc_configer:default(decrypt));
-extract(save, Docid, Index, Path, Decrypt) ->
-    extract(save, Docid, Index, Path, Decrypt,
-	    mc_configer:default(verify));
-extract(open, Docid, Index, Decrypt, Verify) ->
+    extract(save, Docid, Index, Path, mc_configer:default(decrypt));
+extract(open, Docid, Index, Decrypt) ->
     [extract,
      {<<"action">>, open},
      {<<"docid">>, Docid},
      {<<"index">>, Index},
-     {<<"decrypt">>, Decrypt},
-     {<<"verify">>, Verify}].
+     {<<"decrypt">>, Decrypt}].
 
-extract(temp, Docid, Index, What, Param, Decrypt) ->
-    extract(temp, Docid, Index, What, Param, Decrypt,
-	    mc_configer:default(verify));
-extract(save, Docid, Index, Path, Decrypt, Verify) ->
+extract(temp, Docid, Index, What, Param) ->
+    extract(temp, Docid, Index, What, Param, mc_configer:default(decrypt));
+extract(save, Docid, Index, Path, Decrypt) ->
     [extract,
      {<<"action">>, save},
      {<<"docid">>, Docid},
      {<<"index">>, Index},
      {<<"path">>, Path},
-     {<<"decrypt">>, Decrypt},
-     {<<"verify">>, Verify}].
+     {<<"decrypt">>, Decrypt}].
 
-extract(temp, Docid, Index, What, Param, Decrypt, Verify) ->
+extract(temp, Docid, Index, What, Param, Decrypt) ->
     [extract,
      {<<"action">>, temp},
      {<<"docid">>, Docid},
@@ -155,8 +146,7 @@ extract(temp, Docid, Index, What, Param, Decrypt, Verify) ->
      if Param == undefined -> {};
 	true -> {<<"param">>, Param}
      end,
-     {<<"decrypt">>, Decrypt},
-     {<<"verify">>, Verify}].
+     {<<"decrypt">>, Decrypt}].
     
 remove(Docid) ->
     [remove, {<<"docid">>, Docid}].

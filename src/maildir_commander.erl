@@ -4,7 +4,7 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, delete/1, contacts/0, full_mail/1,
+-export([index/0, add/1, delete/1, contacts/0, full_mail/1, extract/3,
 	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2,
 	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2,
 	 archive/0]).
@@ -81,6 +81,37 @@ contacts_loop() ->
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
+%% return all attachments of a mail as a list of {Name, Mime_type, Binary}
+-spec extract(integer(), list(), list()) -> list().
+extract(Docid, Parts, Temp) ->
+    lists:map(
+      fun({Index, Name, Type}) ->
+	      case extract_one_part(Docid, Index, Temp) of
+		  {error, Msg} -> {Name, error, Msg};
+		  {ok, Binary} -> {Name, Type, Binary}
+	      end
+      end, Parts).
+
+extract_one_part(Docid, Index, Path) ->
+    Command = mc_mu_api:extract(save, Docid, Index, Path),
+    ok = mc_server:command(Command),
+    case extract_loop() of
+	{error, Msg} -> {error, Msg};
+	ok ->
+	    {ok, Binary} = file:read_file(Path),
+	    ok = file:delete(Path),
+	    {ok, Binary}
+    end.
+
+extract_loop() ->
+    receive
+	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
+	{async, [{<<"info">>, save} | _ ]} -> ok;
+	%% last 2 are chatty messages that we don't care
+	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
+	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
+    end.
+
 %% return full body of a mail in a tuple {Headers, Text, Html}
 -spec full_mail(integer()) -> {map(), binary(), binary()} | {error, binary()}.
 full_mail(Docid) ->
@@ -91,7 +122,8 @@ full_mail(Docid) ->
 	Mail ->
 	    { parse_mail_headers(Mail),
 	      proplists:get_value(<<"body-txt">>, Mail, <<"">>),
-	      proplists:get_value(<<"body-html">>, Mail, <<"">>) }
+	      proplists:get_value(<<"body-html">>, Mail, <<"">>),
+	      parse_parts(proplists:get_value(<<"parts">>, Mail, [])) }
     end.
 
 %% return all mail matching the query. return a tree of docids, and a map from docid to mail
@@ -193,8 +225,19 @@ parse_mail_headers(Headers) ->
        path => unicode:characters_to_list(proplists:get_value(<<"path">>, Headers)),
        flags => proplists:get_value(<<"flags">>, Headers, []) }.
 
-%% scrub all attachments
+parse_parts(Parts) ->
+    lists:filtermap(
+      fun(Part) ->
+	      case proplists:get_value(<<"attachment">>, Part) of
+		  t ->
+		      {true, {proplists:get_value(<<"index">>, Part),
+			      proplists:get_value(<<"name">>, Part),
+			      proplists:get_value(<<"mime-type">>, Part)}};
+		  _ -> false
+	      end
+      end, Parts).
 
+%% scrub all attachments
 -spec scrub(string()) -> ok | {error, binary()}.
 scrub(Path) ->
     mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path).

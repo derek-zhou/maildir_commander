@@ -73,11 +73,15 @@ attachment_info({Type, SubType, _Headers,
 		 #{disposition := <<"attachment">>,
 		   disposition_params := Params},
 		 Body}) ->
-    {proplists:get_value(<<"filename">>, Params), Type, SubType, Body};
+    {proplists:get_value(<<"filename">>, Params),
+     <<Type/binary, "/", SubType/binary>>,
+     Body};
 attachment_info({Type, SubType, _Headers,
 		 #{content_type_params := Params},
 		 Body}) ->
-    {proplists:get_value(<<"name">>, Params), Type, SubType, Body}.
+    {proplists:get_value(<<"name">>, Params),
+     <<Type/binary, "/", SubType/binary>>,
+     Body}.
 
 -spec fetch_content(binary(), binary(), tuple()) -> binary() | undefined.
 fetch_content(Type, SubType, {Type, SubType, _Headers, _Params, Body})

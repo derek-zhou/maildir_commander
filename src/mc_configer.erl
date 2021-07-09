@@ -13,7 +13,7 @@ default(my_addresses) ->
 			      {ok, Binary} ->
 				  Trimmed = string:trim(Binary, trailing),
 				  User = os:getenv("USER"),
-				  [unicode:characters_to_list([User, $@, Trimmed])]
+				  [unicode:characters_to_binary([User, $@, Trimmed])]
 			  end
 		  end);
 default(threading) -> default_value(threading, false);

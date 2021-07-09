@@ -75,7 +75,7 @@ is_recent(#{date := Date}, Horizon) when Date > Horizon -> true;
 is_recent(#{flags := Flags}, _Horizon) -> lists:member(unread, Flags).
 
 is_important(#{from := [ _Name | Addr ]}, My_addresses) ->
-    sets:is_element(binary_to_list(Addr), My_addresses).
+    sets:is_element(Addr, My_addresses).
 
 delete_conversations(List, Tree, Messages, Client) ->
     mc_tree:traverse(

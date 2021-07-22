@@ -38,9 +38,6 @@ init([]) ->
 		    type => worker},
 		  #{id => mc_local_server,
 		    start => {mc_local_server, start_link, []},
-		    type => worker},
-		  #{id => mc_archiver,
-		    start => {mc_archiver, start_link, []},
 		    type => worker}],
     {ok, {SupFlags, ChildSpecs}}.
 

@@ -42,7 +42,7 @@ maildir_empty_new = no
 * If a conversation contains emails from me (as defined by the `my_addresses` configuration key), archive the whole conversation, will all attachments stripped off to save diskspace
 * If the conversation has nothing to do with me, delete the whole conversation
 
-To run the archiver, you just run `mc archive`. Most likely you have it in a nightly cronjob. Mails archived will still be searchable, just not in the inbox anymore. Right now the rules are not tunable, or rather, it is tuned to suit my need. My goal is to keep my inbox at constant size with minimal manual intervention. 
+Mails archived will still be searchable, just not in the inbox anymore. Right now the rules are not tunable, or rather, it is tuned to suit my need. My goal is to keep my inbox at constant size with minimal manual intervention. 
 
 ## Future works
 

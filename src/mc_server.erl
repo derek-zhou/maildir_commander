@@ -10,10 +10,10 @@
 -export([terminate/3, code_change/4, init/1, callback_mode/0]).
 
 %% the states
--export([running/3, cooldown/3, hibernate/3]).
+-export([running/3, cooldown/3, housekeeping/3, hibernate/3]).
 
 %% the state record to hold extended
--record(mc_state, { port, client, end_test, count = 0, buffer = <<>>}).
+-record(mc_state, { port, client, end_test, housekeeper, count = 0, buffer = <<>>}).
 
 %% apis
 start_link() ->
@@ -118,8 +118,9 @@ running(info, {'EXIT', Port, Reason}, #mc_state{port = Port}) ->
     ?LOG_WARNING("mu server crashed: ~p", [Reason]),
     {next_state, cooldown, #mc_state{}, [{state_timeut, 1000, timeout}]};
 running(state_timeout, timeout, Data = #mc_state{count = 0}) ->
-    kill(Data),
-    {next_state, cooldown, #mc_state{}, [{state_timeout, 1000, timeout}]};
+    ?LOG_NOTICE("Start housekeeping..."),
+    Archiver = spawn_link(mc_archiver, init, []),
+    {next_state, housekeeping, Data#mc_state{housekeeper = Archiver}};
 running(state_timeout, timeout, Data) ->
     {keep_state, Data#mc_state{count = 0}, [{state_timeout, 60000, timeout}]};
 running(internal, async, Data = #mc_state{port = Port,
@@ -144,6 +145,41 @@ running({call, From = {Client, _Tag}}, {command, Command},
     Fun = mc_mu_api:fun_ending(Command),
     {keep_state,
      Data#mc_state{client = Client, end_test = Fun, buffer = <<>>, count = Count + 1},
+     [{reply, From, ok}, {next_event, internal, async}]}.
+
+%% in housekeeping mode, we wait until the housekeeper havs quit
+housekeeping(info, {Port, {data, Binary}}, Data = #mc_state{port = Port}) ->
+    ?LOG_NOTICE("Got junk ~ts", [Binary]),
+    {keep_state, Data};
+housekeeping(info, {'EXIT', Port, Reason}, #mc_state{port = Port}) ->
+    ?LOG_WARNING("mu server crashed: ~p", [Reason]),
+    {next_state, cooldown, #mc_state{}, [{state_timeut, 1000, timeout}]};
+housekeeping(info, {'EXIT', Pid, _Reason}, Data = #mc_state{housekeeper = Pid}) ->
+    ?LOG_NOTICE("Housekeeping done"),
+    kill(Data),
+    {next_state, hibernate, #mc_state{}};
+housekeeping(internal, async, Data = #mc_state{port = Port,
+					  client = Client,
+					  end_test = Test_done,
+					  buffer = Buffer}) ->
+    {Sexp, Remain} = read_port(Buffer, Port),
+    if Client /= undefined -> Client ! {async, Sexp};
+       Client == undefined -> ok
+    end,
+    case Test_done(Sexp) of
+	true ->
+	    {keep_state,
+	     Data#mc_state{client = undefined, end_test = undefined, buffer = <<>>}};
+	false ->
+	    {keep_state,
+	     Data#mc_state{buffer = Remain}, [{next_event, internal, async}]}
+    end;
+housekeeping({call, From = {Client, _Tag}}, {command, Command},
+	     Data = #mc_state{port = Port}) ->
+    port_command(Port, mc_sexp:cmd_string(Command)),
+    Fun = mc_mu_api:fun_ending(Command),
+    {keep_state,
+     Data#mc_state{client = Client, end_test = Fun, buffer = <<>>},
      [{reply, From, ok}, {next_event, internal, async}]}.
 
 %% the cooldown state block 1 second so we do not relaunch the server too often

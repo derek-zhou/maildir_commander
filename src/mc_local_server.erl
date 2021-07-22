@@ -50,11 +50,6 @@ service_loop(Buffer, Sock) ->
 	    ok = mc_server:command(mc_mu_api:index()),
 	    wait_index_loop(Sock),
 	    gen_tcp:shutdown(Sock, write);
-	%% archive is special because we need to print progress
-	{[mc, <<"archive">> | _], _Remain} ->
-	    ok = mc_archiver:run(),
-	    wait_archive_loop(Sock),
-	    gen_tcp:shutdown(Sock, write);
 	{[mc, Command | Args], _Remain} ->
 	    gen_tcp:send(Sock, issue_command(Command, Args)),
 	    gen_tcp:shutdown(Sock, write);
@@ -108,7 +103,7 @@ issue_command(<<"graft">>, [Path, Parent, Maildir]) ->
 					 Parent,
 					 unicode:characters_to_list(Maildir)));
 issue_command(<<"archive">>, _Args) ->
-    print_status(maildir_commander:archive());
+    <<"mc archive is obsolete. It is triggered automatically now.\n">>;
 issue_command(Command, _Args) ->
     io_lib:format("Unknown command: ~ts~n", [Command]).
 
@@ -141,16 +136,6 @@ wait_index_loop(Sock) ->
 	    gen_tcp:send(Sock, io_lib:format("~B messages indexed~n",
 					     [proplists:get_value(<<"processed">>, Rest)])),
 	    wait_index_loop(Sock)
-    end.
-
-wait_archive_loop(Sock) ->
-    receive
-	{async, Msg} ->
-	    gen_tcp:send(Sock, io_lib:format("~ts~n", [Msg])),
-	    case string:prefix(Msg, "Done") of
-		nomatch -> wait_archive_loop(Sock);
-		_ -> ok
-	    end
     end.
 
 send_sexp_loop(Test_done, Sock) ->

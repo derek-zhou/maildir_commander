@@ -118,9 +118,14 @@ running(info, {'EXIT', Port, Reason}, #mc_state{port = Port}) ->
     ?LOG_WARNING("mu server crashed: ~p", [Reason]),
     {next_state, cooldown, #mc_state{}, [{state_timeut, 1000, timeout}]};
 running(state_timeout, timeout, Data = #mc_state{count = 0}) ->
-    ?LOG_NOTICE("Start housekeeping..."),
-    Archiver = spawn_link(mc_archiver, init, []),
-    {next_state, housekeeping, Data#mc_state{housekeeper = Archiver}};
+    case mc_configer:default(housekeeper) of
+	undefined ->
+	    kill(Data),
+	    {next_state, hibernate, #mc_state{}, [hibernate]};
+	{M, F, A} ->
+	    ?LOG_NOTICE("Start housekeeping..."),
+	    {next_state, housekeeping, Data#mc_state{housekeeper = spawn_link(M, F, A)}}
+    end;
 running(state_timeout, timeout, Data) ->
     {keep_state, Data#mc_state{count = 0}, [{state_timeout, 60000, timeout}]};
 running(internal, async, Data = #mc_state{port = Port,
@@ -157,7 +162,7 @@ housekeeping(info, {'EXIT', Port, Reason}, #mc_state{port = Port}) ->
 housekeeping(info, {'EXIT', Pid, _Reason}, Data = #mc_state{housekeeper = Pid}) ->
     ?LOG_NOTICE("Housekeeping done"),
     kill(Data),
-    {next_state, hibernate, #mc_state{}};
+    {next_state, hibernate, #mc_state{}, [hibernate]};
 housekeeping(internal, async, Data = #mc_state{port = Port,
 					  client = Client,
 					  end_test = Test_done,

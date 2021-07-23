@@ -31,10 +31,9 @@ default(contacts_personal) -> default_value(contacts_personal, false);
 default(contacts_after) -> default_value(contacts_after, 0);
 default(index_cleanup) -> default_value(index_cleanup, true);
 default(index_lazy_check) -> default_value(index_lazy_check, false);
-default(archive_days) -> default_value(archive_days, 30);
-default(archive_maildir) -> default_value(archive_maildir, "/.Archive");
 default(socket_file) ->
-    default_value(socket_file, os:getenv("HOME") ++ "/.mc_server_sock").
+    default_value(socket_file, os:getenv("HOME") ++ "/.mc_server_sock");
+default(Key) -> default_value(Key, undefined).
 
 %% return the config value with default. Default can be a value or a zero arity function
 %% to compute the default value

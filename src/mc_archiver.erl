@@ -26,20 +26,27 @@ init() ->
 		fun(Docid) ->
 			is_important(maps:get(Docid, Messages), My_addresses)
 		end,
-	    {_Recent_list, Expired_list} =
-		lists:partition(
-		  fun (Each) -> mc_tree:any(Is_recent, Each, Tree) end,
-		  mc_tree:root_list(Tree)),
-	    {Archive_list, Junk_list} =
+	    {Mark_list, Unmark_list} =
 		lists:partition(
 		  fun (Each) -> mc_tree:any(Is_important, Each, Tree) end,
-		  Expired_list),
+		  mc_tree:root_list(Tree)),
+	    Marked = mark_conversations(Mark_list, Tree, Messages),
+	    Unmarked = unmark_conversations(Unmark_list, Tree, Messages),
+	    ?LOG_NOTICE("~B mails marked, ~B mails unmarked", [Marked, Unmarked]),
+	    {_Recent_list, Archive_list} =
+		lists:partition(
+		  fun (Each) -> mc_tree:any(Is_recent, Each, Tree) end,
+		  Mark_list),
+	    {_Temp_list, Junk_list} =
+		lists:partition(
+		  fun (Each) -> mc_tree:any(Is_recent, Each, Tree) end,
+		  Unmark_list),
 	    ?LOG_NOTICE("~B conversations to be archived, ~B conversation to be deleted",
 			[length(Archive_list), length(Junk_list)]),
-	    Archived = archive_conversations(Archive_list, Archive, Tree, Messages),
-	    Deleted = delete_conversations(Junk_list, Tree, Messages),
-	    ?LOG_NOTICE("Done archiving, ~B mails archived, ~B mails deleted",
-			[Archived, Deleted]),
+	    % Archived = archive_conversations(Archive_list, Archive, Tree, Messages),
+	    % Deleted = delete_conversations(Junk_list, Tree, Messages),
+	    % ?LOG_NOTICE("Done archiving, ~B mails archived, ~B mails deleted",
+	    % [Archived, Deleted]),
 	    ok
     end.
 
@@ -63,4 +70,29 @@ archive_conversations(List, Archive, Tree, Messages) ->
 	      #{path := Path} = maps:get(Docid, Messages),
 	      ?LOG_NOTICE("archiving mail (~B) ~ts", [Docid, Path]),
 	      maildir_commander:scrub(Path, Archive)
+      end, List, Tree).
+
+% the flag replied is used to mark messages for archiving
+mark_conversations(List, Tree, Messages) ->
+    mc_tree:traverse(
+      fun(Docid) ->
+	      #{flags := Flags} = maps:get(Docid, Messages),
+	      Marked = lists:member(replied, Flags),
+	      if Marked -> [];
+		 true ->
+		      ?LOG_NOTICE("marking mail (~B)", [Docid]),
+		      maildir_commander:flag(Docid, "+R")
+	      end
+      end, List, Tree).
+
+unmark_conversations(List, Tree, Messages) ->
+    mc_tree:traverse(
+      fun(Docid) ->
+	      #{flags := Flags} = maps:get(Docid, Messages),
+	      Marked = lists:member(replied, Flags),
+	      if Marked ->
+		      ?LOG_NOTICE("unmarking mail (~B)", [Docid]),
+		      maildir_commander:flag(Docid, "-R");
+		 true -> []
+	      end
       end, List, Tree).

@@ -43,10 +43,10 @@ init() ->
 		  Unmark_list),
 	    ?LOG_NOTICE("~B conversations to be archived, ~B conversation to be deleted",
 			[length(Archive_list), length(Junk_list)]),
-	    % Archived = archive_conversations(Archive_list, Archive, Tree, Messages),
-	    % Deleted = delete_conversations(Junk_list, Tree, Messages),
-	    % ?LOG_NOTICE("Done archiving, ~B mails archived, ~B mails deleted",
-	    % [Archived, Deleted]),
+	    Archived = archive_conversations(Archive_list, Archive, Tree, Messages),
+	    Deleted = delete_conversations(Junk_list, Tree, Messages),
+	    ?LOG_NOTICE("Done archiving, ~B mails archived, ~B mails deleted",
+			[Archived, Deleted]),
 	    ok
     end.
 

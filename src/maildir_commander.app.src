@@ -1,6 +1,6 @@
 {application, maildir_commander,
  [{description, "An OTP application"},
-  {vsn, "0.2"},
+  {vsn, "0.2.0"},
   {registered, []},
   {mod, {maildir_commander_app, []}},
   {applications,

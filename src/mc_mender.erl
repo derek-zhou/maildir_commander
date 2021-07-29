@@ -233,19 +233,25 @@ leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Contents})
      lists:map(fun(Content) -> leaf_mime_mend(How, Content) end, Contents)}.
 
 set_mime_parent({Type, SubType, Headers, Parameters, Content}, Pid) ->
-    New_headers = set_parent([], Headers, Pid),
+    New_headers = set_parent([], false, Headers, Pid),
     {Type, SubType, New_headers, Parameters, Content}.
 
-set_parent(List, [], _Pid) ->
+set_parent(List, true, [], _Pid) ->
     lists:reverse(List);
-set_parent(List, [{<<"In-Reply-To">>, _} | Tail], undefined) ->
-    set_parent(List, Tail, undefined);
-set_parent(List, [{<<"In-Reply-To">>, _} | Tail], Pid) ->
-    set_parent([{<<"In-Reply-To">>, Pid} | List], Tail, Pid);
-set_parent(List, [{<<"References">>, _} | Tail], Pid) ->
-    set_parent(List, Tail, Pid);
-set_parent(List, [Head | Tail], Pid) ->
-    set_parent([Head | List], Tail, Pid).
+set_parent(List, false, [], undefined) ->
+    lists:reverse(List);
+set_parent(List, false, [], Pid) ->
+    lists:reverse([{<<"In-Reply-To">>, Pid} | List]);
+set_parent(List, Found, [{<<"In-Reply-To">>, _} | Tail], undefined) ->
+    set_parent(List, Found, Tail, undefined);
+set_parent(List, true, [{<<"In-Reply-To">>, _} | Tail], Pid) ->
+    set_parent(List, true, Tail, Pid);
+set_parent(List, false, [{<<"In-Reply-To">>, _} | Tail], Pid) ->
+    set_parent([{<<"In-Reply-To">>, Pid} | List], true, Tail, Pid);
+set_parent(List, Found, [{<<"References">>, _} | Tail], Pid) ->
+    set_parent(List, Found, Tail, Pid);
+set_parent(List, Found, [Head | Tail], Pid) ->
+    set_parent([Head | List], Found, Tail, Pid).
 
 fetch_content_from_list(_, _, []) -> undefined;
 fetch_content_from_list(Type, SubType, [Head | Tail]) ->

@@ -6,8 +6,7 @@
 
 -export([index/0, add/1, delete/1, contacts/0, full_mail/1, extract/3,
 	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2,
-	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2,
-	 archive/0]).
+	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -272,22 +271,6 @@ orphan(Path) ->
 -spec orphan(string(), string()) -> ok | {error, binary()}.
 orphan(Path, Maildir) ->
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path, Maildir).
-
-%% archive old mails according to rules
--spec archive() -> ok.
-archive() ->
-    ok = mc_archiver:run(),
-    archive_loop(),
-    ok.
-
-archive_loop() ->
-    receive
-	{async, Msg} ->
-	    case string:prefix(Msg, "Done") of
-		nomatch -> archive_loop();
-		_ -> ok
-	    end
-    end.
 
 %% private functions
 msgid_str(undefined) -> undefined;

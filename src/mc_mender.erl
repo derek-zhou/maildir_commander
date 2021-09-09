@@ -36,10 +36,7 @@ mend(How, Path, Maildir) ->
 				     [Path]),
 			Binary
 		end,
-	    case maildir_commit(Mended, Maildir, filename:basename(Path), Path) of
-		{error, Reason} -> {error, Reason};
-		{ok, New_path} -> maildir_commander:add(New_path)
-	    end
+	    maildir_commit(Mended, Maildir, Path, Path)
     end.
 
 -spec fetch_mime(string()) -> tuple() | {error, binary()}.
@@ -118,8 +115,9 @@ maildir_path(Maildir, Type) ->
     maildir_path(Maildir, Type, "").
 
 -spec maildir_path(string(), atom(), string()) -> string().
-maildir_path(Maildir, Type, Basename)
+maildir_path(Maildir, Type, Filename)
   when Type == cur orelse Type == tmp orelse Type == new ->
+    Basename = filename:basename(Filename),
     lists:flatten([mc_configer:default(index_path),
 		   case Maildir of
 		       "/" -> "";
@@ -159,21 +157,20 @@ maildir_type(<<"/tmp/">>) -> tmp;
 maildir_type(<<"/new/">>) -> new.
 
 %% private functions
-maildir_commit(Binary, Maildir, Basename, Original) ->
-    Tmp = maildir_path(Maildir, tmp, Basename),
+maildir_commit(Binary, Maildir, Filename, Original) ->
+    Tmp = maildir_path(Maildir, tmp, Filename),
     case write_text_file(Binary, Tmp) of
 	{error, Reason} -> {error, Reason};
 	ok ->
-	    case maildir_path(Maildir, cur, Basename) of
+	    case maildir_path(Maildir, cur, Filename) of
 		Original ->
 		    %% overwrite, just rename it
-		    ok = file:rename(Tmp, Original),
-		    {ok, Original};
+		    ok = file:rename(Tmp, Original);
 		New_path ->
 		    %% different maildir
 		    ok = file:delete(Original),
 		    ok = file:rename(Tmp, New_path),
-		    {ok, New_path}
+		    ok = maildir_commander:add(New_path)
 	    end
     end.
 

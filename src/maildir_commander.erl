@@ -5,7 +5,7 @@
 %% public interface of maildir_commander
 
 -export([index/0, add/1, delete/1, contacts/0, full_mail/1, extract/3,
-	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2,
+	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
 	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
@@ -161,6 +161,13 @@ find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
 flag(Docid, Flags) ->
     Command = mc_mu_api:move(Docid, undefined,
 			     unicode:characters_to_binary(Flags)),
+    ok = mc_server:command(Command),
+    move_loop().
+
+%% move a mail to another location
+-spec move(integer(), string()) -> ok | {error, binary()}.
+move(Docid, Maildir) ->
+    Command = mc_mu_api:move(Docid, Maildir),
     ok = mc_server:command(Command),
     move_loop().
 

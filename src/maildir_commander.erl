@@ -6,7 +6,7 @@
 
 -export([index/0, add/1, delete/1, contacts/0, full_mail/1, extract/3,
 	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
-	 scrub/1, scrub/2, graft/2, graft/3, orphan/1, orphan/2]).
+	 scrub/1, graft/2, orphan/1]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -167,7 +167,7 @@ flag(Docid, Flags) ->
 %% move a mail to another location
 -spec move(integer(), string()) -> ok | {error, binary()}.
 move(Docid, Maildir) ->
-    Command = mc_mu_api:move(Docid, Maildir),
+    Command = mc_mu_api:move(Docid, unicode:characters_to_binary(Maildir)),
     ok = mc_server:command(Command),
     move_loop().
 
@@ -248,10 +248,6 @@ parse_parts(Parts) ->
 scrub(Path) ->
     mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path).
 
--spec scrub(string(), string()) -> ok | {error, binary()}.
-scrub(Path, Maildir) ->
-    mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path, Maildir).
-
 %% graft a message to a new message-id as direct parent. That can be undefined, then
 %% it will have no parent. Since we have the definite parent at hand, we will just clear
 %% references header and use the passwd in message-id for in-reply-to. 
@@ -264,20 +260,11 @@ graft(Path, Parent_id) ->
     Pid = msgid_str(Parent_id),
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path).
 
--spec graft(string(), undefined | string(), string()) -> ok | {error, binary()}.
-graft(Path, Parent_id, Maildir) ->
-    Pid = msgid_str(Parent_id),
-    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path, Maildir).
-
 %% orphan a message so it has no parent
 
 -spec orphan(string()) -> ok | {error, binary()}.
 orphan(Path) ->
     mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path).
-
--spec orphan(string(), string()) -> ok | {error, binary()}.
-orphan(Path, Maildir) ->
-    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path, Maildir).
 
 %% private functions
 msgid_str(undefined) -> undefined;

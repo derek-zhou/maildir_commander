@@ -4,8 +4,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/2, mend/3, leaf_mend/2, leaf_mend/3, scrub_mime/1,
-	 is_attachment/1, attachment_info/1,
+-export([mend/2, leaf_mend/2, scrub_mime/1, is_attachment/1, attachment_info/1,
 	 fetch_mime/1, all_leaf_mime/1, fetch_content/3, set_mime_parent/2]).
 -export([maildir_path/2]).
 
@@ -16,14 +15,6 @@
 
 -spec mend(function(), string()) -> ok | {error, binary()}.
 mend(How, Path) ->
-    case maildir_parse(Path) of
-	{error, Reason} -> {error, Reason};
-	{Maildir, cur, _Basename} -> mend(How, Path, Maildir);
-	{_Maildir, _Type, _Basename} -> {error, "Not in cur maildir"}
-    end.
-
--spec mend(function(), string(), string()) -> ok | {error, binary()}.
-mend(How, Path, Maildir) ->
     case read_text_file(Path) of
 	{error, Reason} -> {error, Reason};
 	{ok, Binary} ->
@@ -36,7 +27,7 @@ mend(How, Path, Maildir) ->
 				     [Path]),
 			Binary
 		end,
-	    maildir_commit(Mended, Maildir, Path, Path)
+	    maildir_commit(Mended, Path)
     end.
 
 -spec fetch_mime(string()) -> tuple() | {error, binary()}.
@@ -94,10 +85,6 @@ fetch_content(_, _, _) -> undefined.
 leaf_mend(How, Path) ->
     mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path).
 
--spec leaf_mend(function(), string(), string()) -> ok | {error, binary()}.
-leaf_mend(How, Path, Maildir) ->
-    mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path, Maildir).
-
 %% all text shall be kept
 scrub_mime({<<"text">>, SubType, Headers, Parameters, Body}) ->
     {<<"text">>, SubType, Headers, Parameters, Body};
@@ -115,9 +102,8 @@ maildir_path(Maildir, Type) ->
     maildir_path(Maildir, Type, "").
 
 -spec maildir_path(string(), atom(), string()) -> string().
-maildir_path(Maildir, Type, Filename)
+maildir_path(Maildir, Type, Basename)
   when Type == cur orelse Type == tmp orelse Type == new ->
-    Basename = filename:basename(Filename),
     lists:flatten([mc_configer:default(index_path),
 		   case Maildir of
 		       "/" -> "";
@@ -128,50 +114,13 @@ maildir_path(Maildir, Type, Filename)
 		   $/,
 		   Basename]).
 
-%% infer maildir, type and basename from full path
--spec maildir_parse(string()) -> {error, binary()} | {string(), atom(), string()}.
-maildir_parse(Path) ->
-    Dir = mc_configer:default(index_path),
-    case string:prefix(Path, Dir) of
-	nomatch -> {error, <<"Not under root Maildir">>};
-	Remain ->
-	    case re:split(Remain, "(/cur/|/new/|/tmp/)") of
-		[Maildir, Type, Basename] ->
-		    case filename:basename(Basename) of
-			Basename ->
-			    {
-			     case Maildir of
-				 <<>> -> "/";
-				 _ -> unicode:characters_to_list(Maildir)
-			     end,
-			     maildir_type(Type),
-			     unicode:characters_to_list(Basename)};
-			_ -> {error, <<"Not valid Maildir path">>}
-		    end;
-		_ -> {error, <<"Not in proper Maildir branch">>}
-	    end
-    end.
-
-maildir_type(<<"/cur/">>) -> cur;
-maildir_type(<<"/tmp/">>) -> tmp;
-maildir_type(<<"/new/">>) -> new.
-
 %% private functions
-maildir_commit(Binary, Maildir, Filename, Original) ->
-    Tmp = maildir_path(Maildir, tmp, Filename),
+maildir_commit(Binary, Original) ->
+    Basename = filename:basename(Original),
+    Tmp = maildir_path("/", tmp, Basename),
     case write_text_file(Binary, Tmp) of
 	{error, Reason} -> {error, Reason};
-	ok ->
-	    case maildir_path(Maildir, cur, Filename) of
-		Original ->
-		    %% overwrite, just rename it
-		    ok = file:rename(Tmp, Original);
-		New_path ->
-		    %% different maildir
-		    ok = file:delete(Original),
-		    ok = file:rename(Tmp, New_path),
-		    ok = maildir_commander:add(New_path)
-	    end
+	ok -> file:rename(Tmp, Original)
     end.
 
 %% behave like file:read_file but convert LF to CRLF

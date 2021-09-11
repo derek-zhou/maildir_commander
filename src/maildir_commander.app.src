@@ -5,11 +5,7 @@
   {mod, {maildir_commander_app, []}},
   {applications,
    [kernel,
-    stdlib,
-    sasl,
-    p1_utils,
-    iconv,
-    gen_smtp
+    stdlib
    ]},
   {env,[]},
   {modules, []},

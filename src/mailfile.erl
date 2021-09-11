@@ -8,18 +8,24 @@
 
 -type mime_part() :: {integer(), list(), map(), iolist()}.
 
--spec read_mail(file:filename()) -> [mime_part()].
+-spec read_mail(file:filename()) -> {ok, [mime_part()]} | {error, term()}.
 read_mail(Path) ->
-    {ok, Dev} = open_mail(Path),
-    Parts = all_parts(Dev),
-    ok = close_mail(Dev),
-    Parts.
+    case open_mail(Path) of
+	{error, Reason} -> {error, Reason};
+	{ok, Dev} ->
+	    Parts = all_parts(Dev),
+	    ok = close_mail(Dev),
+	    {ok, Parts}
+    end.
 
--spec write_mail([mime_part()], file:filename()) -> ok.
+-spec write_mail([mime_part()], file:filename()) -> ok | {error, term()}.
 write_mail(Parts, Path) ->
-    {ok, Dev} = new_mail(Path),
-    ok = write_parts(Parts, Dev),
-    ok = close_mail(Dev).
+    case new_mail(Path) of
+	{error, Reason} -> {error, Reason};
+        {ok, Dev} ->
+	    ok = write_parts(Parts, Dev),
+	    ok = close_mail(Dev)
+    end.
 
 -spec open_mail(file:filename()) ->
 	  {ok, file:io_device()} | {error, file:posix() | badarg | system_limit}.
@@ -38,22 +44,26 @@ close_mail(Dev) ->
 -spec write_parts(list(), file:io_device()) -> ok | {error, term()}.
 write_parts(Parts, Dev) -> write_parts(0, [], Parts, Dev).
 
--spec next_part(integer(), list(), file:io_device()) -> {integer(), list(), mime_part()}.
+-spec next_part(integer(), list(), file:io_device()) ->
+	  {integer(), list(), mime_part()} | undefined.
 next_part(Level, Boundaries, Dev) ->
-    Headers = read_headers(Dev, []),
-    Parameters = parse_headers(Headers),
-    {Level2, Boundaries2} =
-	case get_boundary(Parameters) of
-	    undefined -> {Level, Boundaries};
-	    Boundary -> {Level + 1, [Boundary | Boundaries]}
-	end,
-    case read_until(Boundaries2, Dev) of
-	{Body, true} ->
-	    {Level2 - 1, tl(Boundaries2),
-	     {Level, Headers, parse_body(Body, Parameters), Body}};
-	{Body, false} ->
-	    {Level2, Boundaries2,
+    case read_headers(Dev, []) of
+	undefined -> undefined;
+	Headers ->
+	    Parameters = parse_headers(Headers),
+	    {Level2, Boundaries2} =
+		case get_boundary(Parameters) of
+		    undefined -> {Level, Boundaries};
+		    Boundary -> {Level + 1, [Boundary | Boundaries]}
+		end,
+	    case read_until(Boundaries2, Dev) of
+		{Body, true} ->
+		    {Level2 - 1, tl(Boundaries2),
+		     {Level, Headers, parse_body(Body, Parameters), Body}};
+		{Body, false} ->
+		    {Level2, Boundaries2,
 		     {Level, Headers, parse_body(Body, Parameters), Body}}
+	    end
     end.
 
 -spec all_parts(file:io_device()) -> [mime_part()].
@@ -61,7 +71,7 @@ all_parts(Dev) -> all_parts(0, [], Dev).
 
 all_parts(Level, Boundaries, Dev) ->
     case next_part(Level, Boundaries, Dev) of
-	{0, [], Part = {0, _, _, _}} -> [Part];
+	undefined -> [];
 	{Level2, Boundaries2, Part} -> [Part | all_parts(Level2, Boundaries2, Dev)]
     end.
 
@@ -90,10 +100,10 @@ write_parts(Level, Boundaries, [{Level, Headers, Parameters, Body} | Tail], Dev)
 	    write_parts(Level + 1, [Boundary | Boundaries], Tail, Dev)
     end.
     
--spec read_headers(file:io_device(), list()) -> list().
+-spec read_headers(file:io_device(), list()) -> list() | undefined.
 read_headers(Dev, Acc) ->
     case file:read_line(Dev) of
-	eof -> lists:reverse(Acc);
+	eof -> undefined;
 	{error, Reason} -> error(Reason);
 	{ok, <<"\n">>} -> lists:reverse(Acc);
 	{ok, Line = <<"\s", _/binary>>} -> read_headers(Dev, add_to_headers(Line, Acc));

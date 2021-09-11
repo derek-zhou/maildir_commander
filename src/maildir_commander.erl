@@ -4,8 +4,8 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, delete/1, contacts/0, full_mail/1, extract/3,
-	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
+-export([index/0, add/1, delete/1, contacts/0, full_mail/1, stream_mail/1, stream_parts/5,
+	 extract/3, find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
 	 scrub/1, graft/2, orphan/1]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
@@ -124,6 +124,34 @@ full_mail(Docid) ->
 	      proplists:get_value(<<"body-html">>, Mail, <<"">>),
 	      parse_parts(proplists:get_value(<<"parts">>, Mail, [])) }
     end.
+
+%% stream full content of a mail with {mail_part, Ref, Map}
+-spec stream_mail(string()) -> {ok, reference()} | {error, binary()}.
+stream_mail(Path) ->
+    case mailfile:open_mail(Path) of
+	{error, Reason} -> {error, Reason};
+	{ok, Dev} ->
+	    Ref = make_ref(),
+	    spawn_link(?MODULE, stream_parts, [0, [], self(), Ref, Dev]),
+	    {ok, Ref}
+    end.
+
+stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
+    case mailfile:next_part(Level, Boundaries, Dev) of
+	undefined ->
+	    ok = mailfile:close_mail(Dev);
+	{Level2, Boundaries2, {_Level, _Headers, Parameters, _Body}} ->
+	    case should_send(Parameters) of
+		true -> Pid ! {mail_part, Ref, Parameters};
+		false -> ok
+	    end,
+	    stream_parts(Level2, Boundaries2, Pid, Ref, Dev)
+    end.
+
+should_send(#{content_type := <<"text/", _Rest/binary>>}) -> true;
+should_send(#{content_type := <<"multipart/", _Rest/binary>>}) -> false;
+should_send(#{disposition_params := Params}) -> maps:is_key(<<"filename">>, Params);
+should_send(_) -> false.
 
 %% return all mail matching the query. return a tree of docids, and a map from docid to mail
 -spec find(string()) -> {ok, mc_tree:t(), map()} | {error, binary()}.
@@ -246,7 +274,7 @@ parse_parts(Parts) ->
 %% scrub all attachments
 -spec scrub(string()) -> ok | {error, binary()}.
 scrub(Path) ->
-    mc_mender:leaf_mend(fun mc_mender:scrub_mime/1, Path).
+    mc_mender:deep_mend(fun mc_mender:scrub_part/1, Path).
 
 %% graft a message to a new message-id as direct parent. That can be undefined, then
 %% it will have no parent. Since we have the definite parent at hand, we will just clear
@@ -258,13 +286,13 @@ scrub(Path) ->
 -spec graft(string(), undefined | string()) -> ok | {error, binary()}.
 graft(Path, Parent_id) ->
     Pid = msgid_str(Parent_id),
-    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, Pid) end, Path).
+    mc_mender:mend(fun(Mail) -> mc_mender:set_parent(Mail, Pid) end, Path).
 
 %% orphan a message so it has no parent
 
 -spec orphan(string()) -> ok | {error, binary()}.
 orphan(Path) ->
-    mc_mender:mend(fun(Mime) -> mc_mender:set_mime_parent(Mime, undefined) end, Path).
+    mc_mender:mend(fun(Mail) -> mc_mender:set_parent(Mail, undefined) end, Path).
 
 %% private functions
 msgid_str(undefined) -> undefined;

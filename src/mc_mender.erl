@@ -4,97 +4,35 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([mend/2, leaf_mend/2, scrub_mime/1, is_attachment/1, attachment_info/1,
-	 fetch_mime/1, all_leaf_mime/1, fetch_content/3, set_mime_parent/2]).
--export([maildir_path/2]).
-
--export([read_text_file/1, write_text_file/2]).
+-export([mend/2, deep_mend/2, scrub_part/1, set_parent/2, maildir_path/2]).
 
 %% mend an email from Path by chenging its contents using the closure How,
-%% then put it into Maildir
-
--spec mend(function(), string()) -> ok | {error, binary()}.
+-spec mend(function(), string()) -> ok | {error, term()}.
 mend(How, Path) ->
-    case read_text_file(Path) of
+    case mailfile:read_mail(Path) of
 	{error, Reason} -> {error, Reason};
-	{ok, Binary} ->
-	    Mime = mimemail:decode(Binary),
-	    Mended_mime = How(Mime),
-	    Mended =
-		try mimemail:encode(Mended_mime)
-		catch error:_ ->
-			?LOG_WARNING("Cannot encode mime of ~ts. Fallback to the original",
-				     [Path]),
-			Binary
-		end,
-	    maildir_commit(Mended, Path)
+	{ok, [Head | Tail]} -> maildir_commit([How(Head) | Tail], Path)
     end.
 
--spec fetch_mime(string()) -> tuple() | {error, binary()}.
-fetch_mime(Path) ->
-    case read_text_file(Path) of
+%% mend an email by applying How to every node
+-spec deep_mend(function(), string()) -> ok | {error, term()}.
+deep_mend(How, Path) ->
+    case mailfile:read_mail(Path) of
 	{error, Reason} -> {error, Reason};
-	{ok, Binary} -> mimemail:decode(Binary)
+	{ok, Parts} -> maildir_commit(lists:map(How, Parts), Path)
     end.
 
--spec all_leaf_mime(tuple()) -> [tuple()].
-all_leaf_mime(Mime = {_Type, _SubType, _Headers, _Params, Body})
- when is_binary(Body) ->
-    [Mime];
-all_leaf_mime({_Type, _SubType, _Headers, _Params, Body}) when is_tuple(Body) ->
-    all_leaf_mime(Body);
-all_leaf_mime({_Type, _SubType, _Headers, _Params, Body}) when is_list(Body) ->
-    lists:flatmap(fun all_leaf_mime/1, Body).
+scrub_part(Part = {Level, Headers, Parameters, _Body}) ->
+    case keep_part(Parameters) of
+	true -> Part;
+	false -> {Level, Headers, Parameters#{body => <<>>}, <<>>}
+    end.
 
--spec is_attachment(tuple()) -> boolean().
-is_attachment({_Type, _SubType, _Headers, #{disposition := <<"attachment">>}, _Body}) ->
-    true;
-is_attachment({_Type, _SubType, _Headers, #{content_type_params := Params}, _Body}) ->
-    case proplists:get_value(<<"name">>, Params) of
-	undefined -> false;
-	_Name -> true
-    end;
-is_attachment(_) -> false.
-
--spec attachment_info(tuple()) -> tuple().
-attachment_info({Type, SubType, _Headers,
-		 #{disposition := <<"attachment">>,
-		   disposition_params := Params},
-		 Body}) ->
-    {proplists:get_value(<<"filename">>, Params),
-     <<Type/binary, "/", SubType/binary>>,
-     Body};
-attachment_info({Type, SubType, _Headers,
-		 #{content_type_params := Params},
-		 Body}) ->
-    {proplists:get_value(<<"name">>, Params),
-     <<Type/binary, "/", SubType/binary>>,
-     Body}.
-
--spec fetch_content(binary(), binary(), tuple()) -> binary() | undefined.
-fetch_content(Type, SubType, {Type, SubType, _Headers, _Params, Body})
-  when is_binary(Body) -> Body;
-fetch_content(Type, SubType, {_Type, _SubType, _Headers, _params, List})
-  when is_list(List) ->
-    fetch_content_from_list(Type, SubType, List);
-fetch_content(_, _, _) -> undefined.
-
-%% mend only the leaf mime parts
-
--spec leaf_mend(function(), string()) -> ok | {error, binary()}.
-leaf_mend(How, Path) ->
-    mend(fun(Mime) -> leaf_mime_mend(How, Mime) end, Path).
-
-%% all text shall be kept
-scrub_mime({<<"text">>, SubType, Headers, Parameters, Body}) ->
-    {<<"text">>, SubType, Headers, Parameters, Body};
-%% all inline or attachments shall be removed
-scrub_mime({Type, SubType, Headers, Parameters = #{disposition := <<"inline">>}, _Body}) ->
-    {Type, SubType, Headers, Parameters, <<>>};
-scrub_mime({Type, SubType, Headers, Parameters = #{disposition := <<"attachment">>}, _Body}) ->
-    {Type, SubType, Headers, Parameters, <<>>};
-%% everything fell through shall be kept
-scrub_mime(Mime) -> Mime.
+keep_part(#{content_type := <<"text/", _Rest/binary>>}) -> true;
+keep_part(#{content_type := <<"multipart/", _Rest/binary>>}) -> true;
+keep_part(#{disposition := <<"inline">>}) -> false;
+keep_part(#{disposition := <<"attachment">>}) -> false;
+keep_part(_) -> true.
 
 %% return the full path from mailpath
 -spec maildir_path(string(), atom()) -> string().
@@ -115,72 +53,16 @@ maildir_path(Maildir, Type, Basename)
 		   Basename]).
 
 %% private functions
-maildir_commit(Binary, Original) ->
+maildir_commit(Parts, Original) ->
     Basename = filename:basename(Original),
     Tmp = maildir_path("/", tmp, Basename),
-    case write_text_file(Binary, Tmp) of
+    case mailfile:write_mail(Parts, Tmp) of
 	{error, Reason} -> {error, Reason};
 	ok -> file:rename(Tmp, Original)
     end.
 
-%% behave like file:read_file but convert LF to CRLF
-read_text_file(Path) ->
-    case file:open(Path, [read, raw, binary, read_ahead]) of
-	{error, Reason} -> {error, Reason};
-	{ok, Device} ->
-	    case read_lines([], Device) of
-		{error, Reason} ->
-		    file:close(Device),
-		    {error, Reason};
-		{ok, Lines} ->
-		    file:close(Device),
-		    {ok, binstr:join(Lines, "\r\n")}
-	    end
-    end.
-
-read_lines(Buffer, Device) ->
-    case file:read_line(Device) of
-	eof -> {ok, lists:reverse(Buffer)};
-	{error, Reason} -> {error, Reason};
-	{ok, Data} ->
-	    read_lines([string:trim(Data, trailing, "\r\n") | Buffer], Device)
-    end.
-
-%% behave like file:write_file but convert CRLF to LF
-write_text_file(Binary, Path) ->
-    case file:open(Path, [write, raw, delayed_write]) of
-	{error, Reason} -> {error, Reason};
-	{ok, Device} ->
-	    write_lines(Device, Binary),
-	    file:close(Device)
-    end.
-
-write_lines(Device, Binary) ->
-    case binstr:strpos(Binary, "\r\n") of
-	0 -> file:write(Device, Binary);
-	1 ->
-	    file:write(Device, "\n"),
-	    write_lines(Device, binstr:substr(Binary, 3));
-	Index ->
-	    file:write(Device, binstr:substr(Binary, 1, Index - 1)),
-	    file:write(Device, "\n"),
-	    write_lines(Device, binstr:substr(Binary, Index + 2))
-    end.
-
-leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Body})
-  when is_binary(Body) ->
-    How({Type, SubType, Headers, Parameters, Body});
-leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Content})
-  when is_tuple(Content) ->
-    {Type, SubType, Headers, Parameters, leaf_mime_mend(How, Content)};
-leaf_mime_mend(How, {Type, SubType, Headers, Parameters, Contents})
-  when is_list(Contents) ->
-    {Type, SubType, Headers, Parameters,
-     lists:map(fun(Content) -> leaf_mime_mend(How, Content) end, Contents)}.
-
-set_mime_parent({Type, SubType, Headers, Parameters, Content}, Pid) ->
-    New_headers = set_parent([], false, Headers, Pid),
-    {Type, SubType, New_headers, Parameters, Content}.
+set_parent({Level, Headers, Parameters, Body}, Pid) ->
+    {Level, set_parent([], false, Headers, Pid), Parameters, Body}.
 
 set_parent(List, true, [], _Pid) ->
     lists:reverse(List);
@@ -198,11 +80,4 @@ set_parent(List, Found, [{<<"References">>, _} | Tail], Pid) ->
     set_parent(List, Found, Tail, Pid);
 set_parent(List, Found, [Head | Tail], Pid) ->
     set_parent([Head | List], Found, Tail, Pid).
-
-fetch_content_from_list(_, _, []) -> undefined;
-fetch_content_from_list(Type, SubType, [Head | Tail]) ->
-    case fetch_content(Type, SubType, Head) of
-	undefined -> fetch_content_from_list(Type, SubType, Tail);
-	Content -> Content
-    end.
 

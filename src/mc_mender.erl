@@ -68,16 +68,28 @@ set_parent(List, true, [], _Pid) ->
     lists:reverse(List);
 set_parent(List, false, [], undefined) ->
     lists:reverse(List);
+%% add In-Reply-To at the end if no such header is found
 set_parent(List, false, [], Pid) ->
     lists:reverse([{<<"In-Reply-To">>, Pid} | List]);
-set_parent(List, Found, [{<<"In-Reply-To">>, _} | Tail], undefined) ->
-    set_parent(List, Found, Tail, undefined);
-set_parent(List, true, [{<<"In-Reply-To">>, _} | Tail], Pid) ->
-    set_parent(List, true, Tail, Pid);
-set_parent(List, false, [{<<"In-Reply-To">>, _} | Tail], Pid) ->
-    set_parent([{<<"In-Reply-To">>, Pid} | List], true, Tail, Pid);
-set_parent(List, Found, [{<<"References">>, _} | Tail], Pid) ->
-    set_parent(List, Found, Tail, Pid);
-set_parent(List, Found, [Head | Tail], Pid) ->
-    set_parent([Head | List], Found, Tail, Pid).
+%% remove all threading headers
+set_parent(List, Found, [{Name, Value} | Tail], undefined) ->
+    case string:lowercase(Name) of
+	<<"in-reply-to">> -> set_parent(List, Found, Tail, undefined);
+	<<"references">> -> set_parent(List, Found, Tail, undefined);
+	_ -> set_parent([{Name, Value} | List], Found, Tail, undefined)
+    end;
+%% remove all threading headers aftet In-Reply-To has been found
+set_parent(List, true, [{Name, Value} | Tail], Pid) ->
+    case string:lowercase(Name) of
+	<<"in-reply-to">> -> set_parent(List, true, Tail, Pid);
+	<<"references">> -> set_parent(List, true, Tail, Pid);
+	_ -> set_parent([{Name, Value} | List], true, Tail, Pid)
+    end;
+%% change In-Reply-To in place
+set_parent(List, false, [{Name, Value} | Tail], Pid) ->
+    case string:lowercase(Name) of
+	<<"in-reply-to">> -> set_parent([{<<"In-Reply-To">>, Pid} | List], true, Tail, Pid);
+	<<"references">> -> set_parent(List, false, Tail, Pid);
+	_ -> set_parent([{Name, Value} | List], false, Tail, Pid)
+    end.
 

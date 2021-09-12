@@ -151,16 +151,19 @@ read_until(Boundaries = [Boundary | _], Dev) ->
 -spec parse_headers(list()) -> map().
 parse_headers(Headers) -> lists:foldl(fun parse_header/2, #{}, Headers).
 
-parse_header({<<"Content-Type">>, Value}, Map) ->
-    {V, Params} = parse_header_value(Value),
-    Map#{ content_type => V, content_type_params => Params};
-parse_header({<<"Content-Disposition">>, Value}, Map) ->
-    {V, Params} = parse_header_value(Value),
-    Map#{ disposition => V, disposition_params => Params};
-parse_header({<<"Content-Transfer-Encoding">>, Value}, Map) ->
-    {V, _Params} = parse_header_value(Value),
-    Map#{ encoding => V};
-parse_header({_, _}, Map) -> Map.
+parse_header({Key, Value}, Map) ->
+    case string:lowercase(Key) of
+	<<"content-type">> ->
+	    {V, Params} = parse_header_value(Value),
+	    Map#{ content_type => V, content_type_params => Params};
+	<<"content-disposition">> ->
+	    {V, Params} = parse_header_value(Value),
+	    Map#{ disposition => V, disposition_params => Params};
+	<<"content-transfer-encoding">> ->
+	    {V, _Params} = parse_header_value(Value),
+	    Map#{ encoding => V};
+	_ -> Map
+    end.
 
 % I am taking a shortcut here. For all the headers that I care about, There
 % will be nothing more than ASCII string of:

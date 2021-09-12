@@ -240,7 +240,7 @@ parse_body(Body, Map = #{content_type := Type}) ->
     Map#{ body => Bin2 };
 % pre MIME mail or fillers between boundaries
 parse_body(Body, Map) ->
-    case cast_utf8(string:trim(iolist_to_binary(Body))) of
+    case string:trim(cast_utf8(iolist_to_binary(Body))) of
 	<<>> -> Map;
 	Bin -> Map#{ content_type => <<"text/plain">>, body => Bin }
     end.

@@ -108,7 +108,12 @@ read_headers(Dev, Acc) ->
 	{ok, <<"\n">>} -> lists:reverse(Acc);
 	{ok, Line = <<"\s", _/binary>>} -> read_headers(Dev, add_to_headers(Line, Acc));
 	{ok, Line = <<"\t", _/binary>>} -> read_headers(Dev, add_to_headers(Line, Acc));
-	{ok, Line} -> read_headers(Dev, [read_header(Line) | Acc])
+	{ok, Line} ->
+	    % ignore junk header lines
+	    case read_header(Line) of
+		undefined -> read_headers(Dev, Acc);
+		Header -> read_headers(Dev, [Header | Acc])
+	    end
     end.
 
 add_to_headers(Str, [{Key, Value} | Tail ]) when is_binary(Value) ->
@@ -119,7 +124,7 @@ add_to_headers(Str, [{Key, Value} | Tail ]) when is_list(Value) ->
 read_header(Line) ->
     case string:split(Line, ":") of
 	[Key, Value] -> {Key, string:trim(Value, leading, "\s\t")};
-	_ -> error(["No : in header line: ", Line])
+	_ -> undefined
     end.
 
 -spec read_until(list(), file:io_device()) -> {list(), boolean()}.
@@ -163,11 +168,13 @@ parse_header({_, _}, Map) -> Map.
 parse_header_value(Str) ->
     [Value | Additions] = tokenize_header_value(Str, []),
     Params = get_header_params(Additions, #{}),
-    {string:lowercase(Value), Params}.
+    Value2 = cast_utf8(decode_header_value(Value)),
+    {string:lowercase(Value2), Params}.
 
 get_header_params([], Map) -> Map;
 get_header_params([$;, Key, $=, Value | Tail], Map) ->
-    get_header_params(Tail, Map#{string:lowercase(Key) => Value}).
+    Value2 = cast_utf8(decode_header_value(Value)),
+    get_header_params(Tail, Map#{string:lowercase(Key) => Value2}).
 
 tokenize_header_value(Str, Tokens) ->
     case string:next_codepoint(Str) of
@@ -185,15 +192,13 @@ tokenize_header_value(Str, Tokens) ->
 tokenize_header_value_in_token(Str, Buffer, Tokens) ->
     case string:next_codepoint(Str) of
 	[] ->
-	    lists:reverse(Tokens);
+	    C = string:trim(unicode:characters_to_binary(lists:reverse(Buffer)), trailing),
+	    lists:reverse([C | Tokens]);
 	[$\" | Tail] ->
 	    C = unicode:characters_to_binary(lists:reverse(Buffer)),
 	    tokenize_header_value_in_quote(Tail, [], [C | Tokens]);
-	[H | Tail] when H =:= $\s; H =:= $\t; H =:= $\r; H =:= $\n ->
-	    C = unicode:characters_to_binary(lists:reverse(Buffer)),
-	    tokenize_header_value(Tail, [C | Tokens]);
 	[H | Tail] when H =:= $\;; H =:= $\= ->
-	    C = unicode:characters_to_binary(lists:reverse(Buffer)),
+	    C = string:trim(unicode:characters_to_binary(lists:reverse(Buffer)), trailing),
 	    tokenize_header_value(Tail, [H, C | Tokens]);
         [H | Tail] ->
             tokenize_header_value_in_token(Tail, [H | Buffer], Tokens)
@@ -210,27 +215,51 @@ tokenize_header_value_in_quote(Str, Buffer, Tokens) ->
             tokenize_header_value_in_quote(Tail, [H | Buffer], Tokens)
     end.
 
-get_boundary(#{content_type_params := Params}) ->
-    maps:get(<<"boundary">>, Params, undefined);
+get_boundary(#{content_type_params := #{<<"boundary">> := Boundary}}) ->
+    Boundary;
 get_boundary(_) -> undefined.
+
+get_encoding(#{encoding := Encoding}) -> Encoding;
+get_encoding(_) -> <<"7bit">>.
+
+is_text_type(#{content_type := <<"text/", _Rest/binary>>}) -> true;
+is_text_type(_) -> false.
+
+get_charset(#{content_type_params := #{<<"charset">> := Charset}}) ->
+    string:lowercase(Charset);
+get_charset(_) -> <<"utf-8">>.
 
 -spec parse_body(list(), map()) -> map().
 parse_body(Body, Map) ->
-    case string:lowercase(maps:get(encoding, Map, <<"7bit">>)) of
-	<<"quoted-printable">> ->
-	    Map#{body => decode_quoted_printable(Body)};
-	<<"base64">> ->
-	    Map#{body => base64:decode(unicode:characters_to_binary(Body))};
-	_ ->
-	    Map#{body => unicode:characters_to_binary(Body)}
-    end.
+    Bin1 = decode_body(Body, get_encoding(Map)),
+    Bin2 =
+	case is_text_type(Map) of
+	    true -> cast_utf8(convert_utf8(Bin1, get_charset(Map)));
+	    false -> Bin1
+	end,
+    Map#{ body => Bin2 }.
 
-decode_quoted_printable(Lines) ->
-    unicode:characters_to_binary(lists:map(fun decode_quoted_printable_line/1, Lines)).
+decode_body(Body, <<"quoted-printable">>) ->
+    iolist_to_binary(lists:map(fun decode_quoted_printable_line/1, Body));
+decode_body(Body, <<"base64">>) ->
+    base64:decode(iolist_to_binary(Body));
+decode_body(Body, _) ->
+    iolist_to_binary(Body).
+
+convert_utf8(Body, <<"utf-8">>) -> Body;
+convert_utf8(Body, Charset) -> iconv:convert(Charset, <<"utf-8">>, Body).
+
+cast_utf8(Body) ->
+    case unicode:characters_to_binary(Body) of
+	{error, Bin, _Junk} -> Bin;
+	{incomplete, Bin, _Junk} -> Bin;
+	Bin -> Bin
+    end.
 
 decode_quoted_printable_line(Line) ->
     case string:split(Line, "=") of
 	[Str] -> Str;
+	[<<>>, Tail] -> decode_quoted_printable_after_equal(Tail);
 	[Head, Tail] -> [Head | decode_quoted_printable_after_equal(Tail)]
     end.
 
@@ -239,3 +268,13 @@ decode_quoted_printable_after_equal(<<"\n">>) -> <<>>;
 decode_quoted_printable_after_equal(<<A:2/binary, Tail/binary>>) ->
     {ok, C, _} = io_lib:fread("~16u", binary_to_list(A)),
     [C | decode_quoted_printable_line(Tail)].
+
+decode_header_value(Str) ->
+    case re:run(Str, "^\\=\\?([\\w-]+)\\?([QB])\\?(.*)\\?\\=",
+		[{capture, all_but_first, binary}]) of
+	{match, [Charset, <<"Q">>, Encoded]} ->
+	    convert_utf8(iolist_to_binary(decode_quoted_printable_line(Encoded)), Charset);
+	{match, [Charset, <<"B">>, Encoded]} ->
+	    convert_utf8(base64:decode(Encoded), Charset);
+	_  -> Str
+    end.

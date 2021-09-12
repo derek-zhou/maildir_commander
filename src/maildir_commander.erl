@@ -4,7 +4,7 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, delete/1, contacts/0, full_mail/1, stream_mail/1, stream_parts/5,
+-export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_parts/5,
 	 extract/3, find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
 	 scrub/1, graft/2, orphan/1]).
 
@@ -111,18 +111,14 @@ extract_loop() ->
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
-%% return full body of a mail in a tuple {Headers, Text, Html}
--spec full_mail(integer()) -> {map(), binary(), binary()} | {error, binary()}.
-full_mail(Docid) ->
+%% return a mail with Headers
+-spec view(integer()) -> {ok, map()} | {error, binary()}.
+view(Docid) ->
     Command = mc_mu_api:view(Docid),
     ok = mc_server:command(Command),
     case view_loop() of
 	{error, Msg} -> {error, Msg};
-	Mail ->
-	    { parse_mail_headers(Mail),
-	      proplists:get_value(<<"body-txt">>, Mail, <<"">>),
-	      proplists:get_value(<<"body-html">>, Mail, <<"">>),
-	      parse_parts(proplists:get_value(<<"parts">>, Mail, [])) }
+	{ok, Mail} -> {ok, parse_mail_headers(Mail)}
     end.
 
 %% stream full content of a mail with {mail_part, Ref, Map}
@@ -185,30 +181,36 @@ find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
     find_loop([], #{}).
 
 %% change the flags of a mail
--spec flag(integer(), string()) -> ok | {error, binary()}.
+-spec flag(integer(), string()) -> {ok, map()} | {error, binary()}.
 flag(Docid, Flags) ->
     Command = mc_mu_api:move(Docid, undefined,
 			     unicode:characters_to_binary(Flags)),
     ok = mc_server:command(Command),
-    move_loop().
+    case move_loop() of
+	{error, Msg} -> {error, Msg};
+	{ok, Mail} -> {ok, parse_mail_headers(Mail)}
+    end.
 
 %% move a mail to another location
 -spec move(integer(), string()) -> ok | {error, binary()}.
 move(Docid, Maildir) ->
     Command = mc_mu_api:move(Docid, unicode:characters_to_binary(Maildir)),
     ok = mc_server:command(Command),
-    move_loop().
+    case move_loop() of
+	{error, Msg} -> {error, Msg};
+	{ok, Mail} -> {ok, parse_mail_headers(Mail)}
+    end.
 
 move_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"update">>, _} | _ ]} -> ok
+	{async, [{<<"update">>, Mail} | _ ]} -> {ok, Mail}
     end.
 
 view_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"view">>, [{<<"docid">>, _Docid} | Mail ] } | _ ]} -> Mail
+	{async, [{<<"view">>, [{<<"docid">>, _Docid} | Mail ] } | _ ]} -> {ok, Mail}
     end.
 
 find_loop(Tree, Mails) ->
@@ -258,18 +260,6 @@ parse_mail_headers(Headers) ->
        msgid => proplists:get_value(<<"message-id">>, Headers),
        path => unicode:characters_to_list(proplists:get_value(<<"path">>, Headers)),
        flags => proplists:get_value(<<"flags">>, Headers, []) }.
-
-parse_parts(Parts) ->
-    lists:filtermap(
-      fun(Part) ->
-	      case proplists:get_value(<<"attachment">>, Part) of
-		  t ->
-		      {true, {proplists:get_value(<<"index">>, Part),
-			      proplists:get_value(<<"name">>, Part),
-			      proplists:get_value(<<"mime-type">>, Part)}};
-		  _ -> false
-	      end
-      end, Parts).
 
 %% scrub all attachments
 -spec scrub(string()) -> ok | {error, binary()}.

@@ -123,7 +123,7 @@ add_to_headers(Str, [{Key, Value} | Tail ]) when is_list(Value) ->
     
 read_header(Line) ->
     case string:split(Line, ":") of
-	[Key, Value] -> {Key, string:trim(Value, leading, "\s\t")};
+	[Key, Value] -> {Key, string:trim(Value, leading)};
 	_ -> undefined
     end.
 
@@ -222,7 +222,7 @@ get_boundary(_) -> undefined.
 get_encoding(#{encoding := Encoding}) -> Encoding;
 get_encoding(_) -> <<"7bit">>.
 
-is_text_type(#{content_type := <<"text/", _Rest/binary>>}) -> true;
+is_text_type(<<"text/", _Rest/binary>>) -> true;
 is_text_type(_) -> false.
 
 get_charset(#{content_type_params := #{<<"charset">> := Charset}}) ->
@@ -230,14 +230,20 @@ get_charset(#{content_type_params := #{<<"charset">> := Charset}}) ->
 get_charset(_) -> <<"utf-8">>.
 
 -spec parse_body(list(), map()) -> map().
-parse_body(Body, Map) ->
+parse_body(Body, Map = #{content_type := Type}) ->
     Bin1 = decode_body(Body, get_encoding(Map)),
     Bin2 =
-	case is_text_type(Map) of
+	case is_text_type(Type) of
 	    true -> cast_utf8(convert_utf8(Bin1, get_charset(Map)));
 	    false -> Bin1
 	end,
-    Map#{ body => Bin2 }.
+    Map#{ body => Bin2 };
+% pre MIME mail or fillers between boundaries
+parse_body(Body, Map) ->
+    case cast_utf8(string:trim(iolist_to_binary(Body))) of
+	<<>> -> Map;
+	Bin -> Map#{ content_type => <<"text/plain">>, body => Bin }
+    end.
 
 decode_body(Body, <<"quoted-printable">>) ->
     iolist_to_binary(lists:map(fun decode_quoted_printable_line/1, Body));

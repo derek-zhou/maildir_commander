@@ -135,6 +135,7 @@ stream_mail(Path) ->
 stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
     case mailfile:next_part(Level, Boundaries, Dev) of
 	undefined ->
+	    Pid ! {mail_part, Ref, eof},
 	    ok = mailfile:close_mail(Dev);
 	{Level2, Boundaries2, {_Level, _Headers, Parameters, _Body}} ->
 	    case should_send(Parameters) of
@@ -144,7 +145,8 @@ stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
 	    stream_parts(Level2, Boundaries2, Pid, Ref, Dev)
     end.
 
-should_send(#{content_type := <<"text/", _Rest/binary>>}) -> true;
+should_send(#{content_type := <<"text/plain">>}) -> true;
+should_send(#{content_type := <<"text/html">>}) -> true;
 should_send(#{content_type := <<"multipart/", _Rest/binary>>}) -> false;
 should_send(#{disposition_params := Params}) -> maps:is_key(<<"filename">>, Params);
 should_send(_) -> false.

@@ -47,23 +47,23 @@ write_parts(Parts, Dev) -> write_parts(0, [], Parts, Dev).
 -spec next_part(integer(), list(), file:io_device()) ->
 	  {integer(), list(), mime_part()} | undefined.
 next_part(Level, Boundaries, Dev) ->
-    case read_headers(Dev, []) of
-	undefined -> undefined;
-	Headers ->
-	    Parameters = parse_headers(Headers),
-	    {Level2, Boundaries2} =
-		case get_boundary(Parameters) of
-		    undefined -> {Level, Boundaries};
-		    Boundary -> {Level + 1, [Boundary | Boundaries]}
-		end,
-	    case read_until(Boundaries2, Dev) of
-		{Body, true} ->
-		    {Level2 - 1, tl(Boundaries2),
-		     {Level, Headers, parse_body(Body, Parameters), Body}};
-		{Body, false} ->
-		    {Level2, Boundaries2,
-		     {Level, Headers, parse_body(Body, Parameters), Body}}
-	    end
+    Headers = read_headers(Dev, []),
+    Parameters = parse_headers(Headers),
+    {Level2, Boundaries2} =
+	case get_boundary(Parameters) of
+	    undefined -> {Level, Boundaries};
+	    Boundary -> {Level + 1, [Boundary | Boundaries]}
+	end,
+    case read_until(Boundaries2, Dev) of
+	{Body, true} ->
+	    Part = {Level, Headers, parse_body(Body, Parameters), Body},
+	    case Level2 of
+		0 -> {-1, [], Part};
+		_ -> {Level2 - 1, tl(Boundaries2), Part}
+	    end;
+	{Body, false} ->
+	    {Level2, Boundaries2,
+	     {Level, Headers, parse_body(Body, Parameters), Body}}
     end.
 
 -spec all_parts(file:io_device()) -> [mime_part()].
@@ -71,7 +71,7 @@ all_parts(Dev) -> all_parts(0, [], Dev).
 
 all_parts(Level, Boundaries, Dev) ->
     case next_part(Level, Boundaries, Dev) of
-	undefined -> [];
+	{-1, _, Part} -> [Part];
 	{Level2, Boundaries2, Part} -> [Part | all_parts(Level2, Boundaries2, Dev)]
     end.
 
@@ -103,7 +103,7 @@ write_parts(Level, Boundaries, [{Level, Headers, Parameters, Body} | Tail], Dev)
 -spec read_headers(file:io_device(), list()) -> list() | undefined.
 read_headers(Dev, Acc) ->
     case file:read_line(Dev) of
-	eof -> undefined;
+	eof -> lists:reverse(Acc);
 	{error, Reason} -> error(Reason);
 	{ok, <<"\n">>} -> lists:reverse(Acc);
 	{ok, Line = <<"\s", _/binary>>} -> read_headers(Dev, add_to_headers(Line, Acc));
@@ -130,16 +130,16 @@ read_header(Line) ->
 -spec read_until(list(), file:io_device()) -> {list(), boolean()}.
 read_until([], Dev) ->
     case file:read_line(Dev) of
-	eof -> {[], false};
+	eof -> {[], true};
 	{error, Reason} -> error(Reason);
 	{ok, Line} ->
-	    {Lines, false} = read_until([], Dev),
-	    {[Line | Lines], false}
+	    {Lines, true} = read_until([], Dev),
+	    {[Line | Lines], true}
     end;
 read_until(Boundaries = [Boundary | _], Dev) ->
     Size = byte_size(Boundary),
     case file:read_line(Dev) of
-	eof -> error("Unexpected EOF");
+	eof -> {[], true};
 	{error, Reason} -> error(Reason);
 	{ok, <<"--", Boundary:Size/binary, "--", _/binary>>} -> {[], true};
 	{ok, <<"--", Boundary:Size/binary, _/binary>>} -> {[], false};

@@ -134,7 +134,11 @@ stream_mail(Path) ->
 
 stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
     case mailfile:next_part(Level, Boundaries, Dev) of
-	undefined ->
+	{-1, [], {_Level, _Headers, Parameters, _Body}} ->
+	    case should_send(Parameters) of
+		true -> Pid ! {mail_part, Ref, Parameters};
+		false -> ok
+	    end,
 	    Pid ! {mail_part, Ref, eof},
 	    ok = mailfile:close_mail(Dev);
 	{Level2, Boundaries2, {_Level, _Headers, Parameters, _Body}} ->

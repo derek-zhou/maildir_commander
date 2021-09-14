@@ -6,7 +6,7 @@
 
 -export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_parts/5,
 	 extract/3, find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
-	 scrub/1, graft/2, orphan/1]).
+	 scrub/1, graft/2, orphan/1, snooze/0]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -26,39 +26,22 @@ index_loop() ->
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
     end.
 
+%% just a head up to bring the server from hibernating
+snooze() -> mc_server:snooze().
+
 %% add a message to the database. it must has the full path and is already be in the Maildir.
 %% return ok if successful or {error, Msg} where Msg is a binary string for the error
--spec add(string()) -> ok | {error, binary()}.
+-spec add(string()) -> ok.
 add(Path) ->
     %% the sent function name is from mu. add return too much crap
     Command = mc_mu_api:sent(unicode:characters_to_binary(Path)),
-    mc_server:command(Command),
-    add_loop().
-
-add_loop() ->
-    receive
-	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"sent">>, t} | _Rest ]} -> ok;
-	%% last 2 are chatty messages that we don't care
-	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
-	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
-    end.
+    mc_server:post(Command).
 
 %% delete a message from both the filesystem and the database
--spec delete(integer()) -> ok | {error, binary()}.
+-spec delete(integer()) -> ok.
 delete(Docid) ->
     Command = mc_mu_api:remove(Docid),
-    ok = mc_server:command(Command),
-    remove_loop().
-
-remove_loop() ->
-    receive
-	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"remove">>, _} | _Rest ]} -> ok;
-	%% last 2 are chatty messages that we don't care
-	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
-	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
-    end.
+    mc_server:post(Command).
 
 %% return all contacts in the database
 -spec contacts() -> {ok, [{term(), binary()}]} | {error, binary()}.

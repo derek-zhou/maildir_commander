@@ -4,7 +4,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% apis
--export([start_link/0, command/1]).
+-export([start_link/0, command/1, post/1, snooze/0]).
 
 %% callbacks
 -export([terminate/3, code_change/4, init/1, callback_mode/0]).
@@ -13,7 +13,7 @@
 -export([running/3, cooldown/3, housekeeping/3, hibernate/3]).
 
 %% the state record to hold extended
--record(mc_state, { port, client, end_test, housekeeper, count = 0, buffer = <<>>}).
+-record(mc_state, { port, client, end_test, housekeeper = undefined, count = 0, buffer = <<>> }).
 
 %% apis
 start_link() ->
@@ -22,13 +22,19 @@ start_link() ->
 command(Command) ->
     gen_statem:call(?MODULE, {command, Command}).
 
+post(Command) ->
+    gen_statem:cast(?MODULE, {command, Command}).
+
+snooze() ->
+    gen_statem:cast(?MODULE, snooze).
+
 %% Mandatory callback functions
 code_change(_Vsn, State, Data, _Extra) ->
     {ok,State,Data}.
 
 callback_mode() -> state_functions.
 
-terminate(_Reason, running, Data) -> kill(Data);
+terminate(_Reason, running, #mc_state{port = Port}) -> kill(Port);
 terminate(_Reason, _, _Data) -> ok. 
 
 init([]) ->
@@ -36,7 +42,7 @@ init([]) ->
     {ok, running, cold_boot(), [{state_timeout, 60000, timeout}, {next_event, internal, async}]}.
 
 %% internal functions
-kill(#mc_state{port = Port}) ->
+kill(Port) ->
     Command = mc_mu_api:quit(),
     port_command(Port, mc_sexp:cmd_string(Command)),
     %% we do not care what the server has to say in quit; and it is not reliable anyway.
@@ -44,17 +50,32 @@ kill(#mc_state{port = Port}) ->
     flush_port(Port).
 
 cold_boot() ->
-    Data = #mc_state{port = Port} = boot(),
+    Port = open_port({spawn, "mu server"}, [binary]),
     Command = mc_mu_api:index(),
     port_command(Port, mc_sexp:cmd_string(Command)),
     Fun = mc_mu_api:fun_ending(Command),
-    Data#mc_state{end_test = Fun}.
+    #mc_state{port = Port, end_test = Fun}.
 
-boot() ->
+boot(Backlog) ->
     ?LOG_NOTICE("mu server booting"),
     Port = open_port({spawn, "mu server"}, [binary]),
+    lists:foreach(
+      fun (Command) ->
+	      run_command(Command, Port)
+      end, lists:reverse(Backlog)),
     #mc_state{port = Port}.
-    
+
+run_command(Command, Port) ->
+    port_command(Port, mc_sexp:cmd_string(Command)),
+    run_loop(mc_mu_api:fun_ending(Command), <<>>, Port).
+
+run_loop(Test_done, Buffer, Port) ->
+    {Sexp, Remain} = read_port(Buffer, Port),
+    case Test_done(Sexp) of
+	true -> ok;
+	false -> run_loop(Test_done, Remain, Port)
+    end.
+
 flush_port(Port) ->
     receive
 	{'EXIT', Port, _Reason} -> ok;
@@ -116,12 +137,12 @@ running(info, {Port, {data, Binary}}, Data = #mc_state{port = Port}) ->
     {keep_state, Data};
 running(info, {'EXIT', Port, Reason}, #mc_state{port = Port}) ->
     ?LOG_WARNING("mu server crashed: ~p", [Reason]),
-    {next_state, cooldown, #mc_state{}, [{state_timeut, 1000, timeout}]};
-running(state_timeout, timeout, Data = #mc_state{count = 0}) ->
+    {next_state, cooldown, [], [{state_timeut, 1000, timeout}]};
+running(state_timeout, timeout, Data = #mc_state{port = Port, count = 0}) ->
     case mc_configer:default(housekeeper) of
 	undefined ->
-	    kill(Data),
-	    {next_state, hibernate, #mc_state{}, [hibernate]};
+	    kill(Port),
+	    {next_state, hibernate, [], [hibernate]};
 	{M, F, A} ->
 	    ?LOG_NOTICE("Start housekeeping..."),
 	    {next_state, housekeeping, Data#mc_state{housekeeper = spawn_link(M, F, A)}}
@@ -144,6 +165,15 @@ running(internal, async, Data = #mc_state{port = Port,
 	    {keep_state,
 	     Data#mc_state{buffer = Remain}, [{next_event, internal, async}]}
     end;
+running(cast, snooze, Data = #mc_state{count = 0}) -> {keep_state, Data#mc_state{count = 1}};
+running(cast, snooze, Data) -> {keep_state, Data};
+running(cast, {command, Command},
+	Data = #mc_state{port = Port, count = Count}) ->
+    port_command(Port, mc_sexp:cmd_string(Command)),
+    Fun = mc_mu_api:fun_ending(Command),
+    {keep_state,
+     Data#mc_state{client = undefined, end_test = Fun, buffer = <<>>, count = Count + 1},
+     [{next_event, internal, async}]};
 running({call, From = {Client, _Tag}}, {command, Command},
 	Data = #mc_state{port = Port, count = Count}) ->
     port_command(Port, mc_sexp:cmd_string(Command)),
@@ -152,17 +182,14 @@ running({call, From = {Client, _Tag}}, {command, Command},
      Data#mc_state{client = Client, end_test = Fun, buffer = <<>>, count = Count + 1},
      [{reply, From, ok}, {next_event, internal, async}]}.
 
-%% in housekeeping mode, we wait until the housekeeper havs quit
+%% in housekeeping mode, we wait until the housekeeper have quit
 housekeeping(info, {Port, {data, Binary}}, Data = #mc_state{port = Port}) ->
     ?LOG_NOTICE("Got junk ~ts", [Binary]),
     {keep_state, Data};
-housekeeping(info, {'EXIT', Port, Reason}, #mc_state{port = Port}) ->
-    ?LOG_WARNING("mu server crashed: ~p", [Reason]),
-    {next_state, cooldown, #mc_state{}, [{state_timeut, 1000, timeout}]};
-housekeeping(info, {'EXIT', Pid, _Reason}, Data = #mc_state{housekeeper = Pid}) ->
+housekeeping(info, {'EXIT', Pid, _Reason}, #mc_state{port = Port, housekeeper = Pid}) ->
     ?LOG_NOTICE("Housekeeping done"),
-    kill(Data),
-    {next_state, hibernate, #mc_state{}, [hibernate]};
+    kill(Port),
+    {next_state, hibernate, [], [hibernate]};
 housekeeping(internal, async, Data = #mc_state{port = Port,
 					  client = Client,
 					  end_test = Test_done,
@@ -179,6 +206,14 @@ housekeeping(internal, async, Data = #mc_state{port = Port,
 	    {keep_state,
 	     Data#mc_state{buffer = Remain}, [{next_event, internal, async}]}
     end;
+housekeeping(cast, snooze, Data) -> {keep_state, Data};
+housekeeping(cast, {command, Command},
+	     Data = #mc_state{port = Port}) ->
+    port_command(Port, mc_sexp:cmd_string(Command)),
+    Fun = mc_mu_api:fun_ending(Command),
+    {keep_state,
+     Data#mc_state{client = undefined, end_test = Fun, buffer = <<>>},
+     [{next_event, internal, async}]};
 housekeeping({call, From = {Client, _Tag}}, {command, Command},
 	     Data = #mc_state{port = Port}) ->
     port_command(Port, mc_sexp:cmd_string(Command)),
@@ -188,13 +223,17 @@ housekeeping({call, From = {Client, _Tag}}, {command, Command},
      [{reply, From, ok}, {next_event, internal, async}]}.
 
 %% the cooldown state block 1 second so we do not relaunch the server too often
-cooldown(state_timeout, timeout, #mc_state{count = 1}) ->
-    {next_state, running, boot(), [{state_timeout, 60000, timeout}]};
-cooldown(state_timeout, timeout, Data) ->
-    {next_state, hibernate, Data, [hibernate]};
-cooldown({call, _Client}, _Content, _Data) ->
-    {keep_state, #mc_state{count = 1}, [postpone]}.
+cooldown(state_timeout, timeout, Backlog) ->
+    {next_state, hibernate, Backlog, [hibernate]};
+cooldown(cast, snooze, Backlog) ->
+    {next_state, running, boot(Backlog), [{state_timeout, 60000, timeout}]};
+cooldown(cast, {command, Command}, Backlog) -> {keep_state, [Command | Backlog]};
+cooldown({call, _Client}, _Content, Backlog) ->
+    {next_state, running, boot(Backlog), [{state_timeout, 60000, timeout}]}.
 
 %% the hibernate state can be waken up by any api call
-hibernate({call, _client}, _Content, _Data) ->
-    {next_state, running, boot(), [postpone, {state_timeout, 60000, timeout}]}.
+hibernate(cast, snooze, Backlog) ->
+    {next_state, running, boot(Backlog), [{state_timeout, 60000, timeout}]};
+hibernate(cast, {command, Command}, Backlog) -> {keep_state, [Command | Backlog]};
+hibernate({call, _client}, _Content, Backlog) ->
+    {next_state, running, boot(Backlog), [postpone, {state_timeout, 60000, timeout}]}.

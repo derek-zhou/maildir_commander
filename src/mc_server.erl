@@ -94,20 +94,21 @@ read_port(Buffer, Port) ->
 		    read_port(<<Remain/binary,Binary/binary>>, Port)
 	    end;
 	{Len, Remain} ->
-	    read_sexp([Remain], byte_size(Remain), Len, Port)
+	    read_sexp(Remain, Len, Port)
     end.
 
-read_sexp(Buffer, Buffer_len, Len, _Port) when Buffer_len >= Len ->
-    {Sexp, Remain} = mc_sexp:parse_term(Buffer),
-    %% Making sure the remain is consolidated to one binary for easy handling
-    {Sexp, iolist_to_binary(Remain)};
-read_sexp(Buffer, Buffer_len, Len, Port) when Buffer_len < Len ->
+read_sexp(Buffer, Len, _Port) when byte_size(Buffer) >= Len ->
+    This = binary_part(Buffer, 0, Len),
+    Remain = binary_part(Buffer, Len, byte_size(Buffer) - Len),
+    {Sexp, _Junk} = mc_sexp:parse_term(This),
+    {Sexp, Remain};
+read_sexp(Buffer, Len, Port) ->
     receive
 	{'EXIT', Port, Reason} ->
 	    ?LOG_ERROR("mu server crashed unexpectedly: ~p", [Reason]),
 	    error(Reason);
 	{Port, {data, Binary}} ->
-	    read_sexp(Buffer ++ [Binary], Buffer_len + byte_size(Binary), Len, Port) 
+	    read_sexp(<<Buffer/binary,Binary/binary>>, Len, Port)
     end.
 
 %% FE, Length in HEX, FF, assume no more than 6 bytes. This is a sane upper limit

@@ -5,7 +5,7 @@
 %% public interface of maildir_commander
 
 -export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_parts/5,
-	 extract/3, find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
+	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
 	 scrub/1, graft/2, orphan/1, snooze/0]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
@@ -58,37 +58,6 @@ contacts_loop() ->
 		   fun ([Contact | _]) ->
 			   parse_contact(Contact)
 		   end, Contacts)};
-	%% last 2 are chatty messages that we don't care
-	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
-	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
-    end.
-
-%% return all attachments of a mail as a list of {Name, Mime_type, Binary}
--spec extract(integer(), list(), list()) -> list().
-extract(Docid, Parts, Temp) ->
-    lists:map(
-      fun({Index, Name, Type}) ->
-	      case extract_one_part(Docid, Index, Temp) of
-		  {error, Msg} -> {Name, error, Msg};
-		  {ok, Binary} -> {Name, Type, Binary}
-	      end
-      end, Parts).
-
-extract_one_part(Docid, Index, Path) ->
-    Command = mc_mu_api:extract(save, Docid, Index, Path),
-    ok = mc_server:command(Command),
-    case extract_loop() of
-	{error, Msg} -> {error, Msg};
-	ok ->
-	    {ok, Binary} = file:read_file(Path),
-	    ok = file:delete(Path),
-	    {ok, Binary}
-    end.
-
-extract_loop() ->
-    receive
-	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"info">>, save} | _ ]} -> ok;
 	%% last 2 are chatty messages that we don't care
 	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()

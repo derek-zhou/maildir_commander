@@ -3,7 +3,7 @@ maildir commander is a wrapper around [maildir-utils](https://www.djcbsoftware.n
 
 ## dependency
 
-* [mu](https://www.djcbsoftware.nl/code/mu/) 1.4+
+* [mu](https://www.djcbsoftware.nl/code/mu/) 1.6+
 * erlang OTP 21+
 * socat, which is used to re-export the `mu server` compatible interface
 * inotify-tools, for watching the Maildir for new mails

@@ -175,9 +175,12 @@ parse_header_value(Str) ->
     {string:lowercase(Value2), Params}.
 
 get_header_params([], Map) -> Map;
+get_header_params([$;], Map) -> Map;
 get_header_params([$;, Key, $=, Value | Tail], Map) ->
     Value2 = cast_utf8(decode_header_value(Value)),
-    get_header_params(Tail, Map#{string:lowercase(Key) => Value2}).
+    get_header_params(Tail, Map#{string:lowercase(Key) => Value2});
+% there are broken emails out there
+get_header_params(_, Map) -> Map.
 
 tokenize_header_value(Str, Tokens) ->
     case string:next_codepoint(Str) of

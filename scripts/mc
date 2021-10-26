@@ -5,6 +5,11 @@ case $1 in
     server)
 	exec socat -t 0 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
+    copy)
+	Command="(mc \"copy\")"
+	Command+=`cat`
+	echo "$Command" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
+	;;
     *)
 	# this is force quoting all arguments
 	Command="(mc \"$1\""

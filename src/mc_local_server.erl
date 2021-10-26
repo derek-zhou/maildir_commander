@@ -15,8 +15,8 @@ init() ->
     register(?MODULE, self()),
     File = mc_configer:default(socket_file),
     file:delete(File),
-    {ok, LSock} = gen_tcp:listen(0, [binary, {packet, 0}, {active, false},
-				     {ip, {local, File}}]),
+    {ok, LSock} = gen_tcp:listen(0, [binary, {packet, raw}, {active, false},
+				     {exit_on_close, false}, {ip, {local, File}}]),
     accept_loop(LSock),
     exit(shutdown).
 
@@ -49,6 +49,11 @@ service_loop(Buffer, Sock) ->
 	{[mc, <<"index">> | _], _Remain} ->
 	    ok = mc_server:command(mc_mu_api:index()),
 	    wait_index_loop(Sock),
+	    gen_tcp:shutdown(Sock, write);
+	%% copy is special due to reading
+	{[mc, <<"copy">> | _Args], Remain} ->
+	    Data = unicode:characters_to_binary(read_to_end(Sock, [Remain])),
+	    gen_tcp:send(Sock, put_pasteboard(Data)),
 	    gen_tcp:shutdown(Sock, write);
 	{[mc, Command | Args], _Remain} ->
 	    gen_tcp:send(Sock, issue_command(Command, Args)),
@@ -94,6 +99,13 @@ issue_command(<<"graft">>, [Path, Parent]) ->
     print_status(maildir_commander:graft(unicode:characters_to_list(Path), Parent));
 issue_command(<<"archive">>, _Args) ->
     <<"mc archive is obsolete. It is triggered automatically now.\n">>;
+issue_command(<<"paste">>, _Args) ->
+    case mc_configer:default(get_pasteboard) of
+	undefined ->
+	    <<"No pasteboard installed\n">>;
+	{M,F,A} ->
+	    apply(M, F, A)
+    end;
 issue_command(Command, _Args) ->
     io_lib:format("Unknown command: ~ts~n", [Command]).
 
@@ -144,3 +156,20 @@ send_sexp(Sexp, Sock) ->
     Length = iolist_size(Serialized),
     Length_bin = integer_to_binary(Length, 16),
     gen_tcp:send(Sock, [<<16#FE, Length_bin/binary, 16#FF>>, Serialized]).
+
+read_to_end(Sock, Buffer) ->
+    case gen_tcp:recv(Sock, 0) of
+	{ok, <<"">>} -> lists:reverse(Buffer);
+	{ok, Packet} -> read_to_end([Packet | Buffer], Sock);
+ 	{error, closed} -> lists:reverse(Buffer);
+	{error, Reason} -> error(Reason)
+    end.
+
+put_pasteboard(Data) ->
+    case mc_configer:default(put_pasteboard) of
+	undefined ->
+	    "No pasteboard installed\n";
+	{M,F,A} ->
+	    ok = apply(M, F, [Data | A]),
+	    io_lib:format("Copied ~B bytes to pasteboard\n", [byte_size(Data)])
+    end.

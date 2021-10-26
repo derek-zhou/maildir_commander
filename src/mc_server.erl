@@ -13,7 +13,7 @@
 -export([running/3, cooldown/3, housekeeping/3, hibernate/3]).
 
 %% the state record to hold extended
--record(mc_state, { port, client, end_test, housekeeper = undefined, count = 0, buffer = <<>> }).
+-record(mc_state, { port, client, end_test, housekeeper, count = 0, buffer = <<>> }).
 
 %% apis
 start_link() ->

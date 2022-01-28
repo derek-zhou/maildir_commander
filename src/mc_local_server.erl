@@ -106,6 +106,13 @@ issue_command(<<"paste">>, _Args) ->
 	{M,F,A} ->
 	    apply(M, F, A)
     end;
+issue_command(<<"send">>, [Name, Address]) ->
+    case mc_configer:default(send_draft) of
+	undefined ->
+	    <<"No sender installed\n">>;
+	{M,F,A} ->
+	    apply(M, F, [Name, Address | A])
+    end;
 issue_command(Command, _Args) ->
     io_lib:format("Unknown command: ~ts~n", [Command]).
 

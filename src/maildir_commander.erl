@@ -202,7 +202,7 @@ parse_mail_headers(Headers) ->
     #{ subject => proplists:get_value(<<"subject">>, Headers, <<>>),
        %% from is a list of email addresses. Pick the first one
        from => case proplists:get_value(<<"from">>, Headers) of
-		   undefined -> undefined;
+		   undefined -> [<<>> | <<>>];
 		   [] -> [<<>> | <<>>];
 		   [Add | _] -> Add
 	       end,

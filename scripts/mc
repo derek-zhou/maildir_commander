@@ -6,7 +6,7 @@ case $1 in
 	exec socat -t 0 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;
     copy)
-	Command="(mc \"copy\")"
+	Command="(mc \"copy\" \"$2\")"
 	Command+=`cat`
 	echo "$Command" | socat -t 10 UNIX-CONNECT:$HOME/.mc_server_sock -
 	;;

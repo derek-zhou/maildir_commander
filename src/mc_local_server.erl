@@ -51,9 +51,9 @@ service_loop(Buffer, Sock) ->
 	    wait_index_loop(Sock),
 	    gen_tcp:shutdown(Sock, write);
 	%% copy is special due to reading
-	{[mc, <<"copy">> | _Args], Remain} ->
+	{[mc, <<"copy">>, Subject], Remain} ->
 	    Data = unicode:characters_to_binary(read_to_end(Sock, [Remain])),
-	    gen_tcp:send(Sock, put_pasteboard(Data)),
+	    gen_tcp:send(Sock, put_pasteboard(Subject, Data)),
 	    gen_tcp:shutdown(Sock, write);
 	{[mc, Command | Args], _Remain} ->
 	    gen_tcp:send(Sock, issue_command(Command, Args)),
@@ -111,7 +111,10 @@ issue_command(<<"send">>, [Name, Address]) ->
 	undefined ->
 	    <<"No sender installed\n">>;
 	{M,F,A} ->
-	    apply(M, F, [Name, Address | A])
+	    case apply(M, F, [Name, Address | A]) of
+		ok -> <<"Mail sent\n">>;
+		{error, Msg} -> io_lib:format("error: ~ts~n", [Msg])
+	    end
     end;
 issue_command(Command, _Args) ->
     io_lib:format("Unknown command: ~ts~n", [Command]).
@@ -167,16 +170,16 @@ send_sexp(Sexp, Sock) ->
 read_to_end(Sock, Buffer) ->
     case gen_tcp:recv(Sock, 0) of
 	{ok, <<"">>} -> lists:reverse(Buffer);
-	{ok, Packet} -> read_to_end([Packet | Buffer], Sock);
+	{ok, Packet} -> read_to_end(Sock, [Packet | Buffer]);
  	{error, closed} -> lists:reverse(Buffer);
 	{error, Reason} -> error(Reason)
     end.
 
-put_pasteboard(Data) ->
+put_pasteboard(Subject, Data) ->
     case mc_configer:default(put_pasteboard) of
 	undefined ->
 	    "No pasteboard installed\n";
 	{M,F,A} ->
-	    ok = apply(M, F, [Data | A]),
+	    ok = apply(M, F, [Subject, Data | A]),
 	    io_lib:format("Copied ~B bytes to pasteboard\n", [byte_size(Data)])
     end.

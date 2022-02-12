@@ -33,6 +33,10 @@ snooze() -> mc_server:snooze().
 %% return ok if successful or {error, Msg} where Msg is a binary string for the error
 -spec add(string()) -> ok.
 add(Path) ->
+    case mc_configer:default(notify_new_mail) of
+	undefined -> ok;
+	{M,F,A} -> apply(M, F, A)
+    end
     %% the sent function name is from mu. add return too much crap
     Command = mc_mu_api:sent(unicode:characters_to_binary(Path)),
     mc_server:post(Command).

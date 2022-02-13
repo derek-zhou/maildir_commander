@@ -277,9 +277,12 @@ decode_quoted_printable_line(Line) ->
 
 % soft new line
 decode_quoted_printable_after_equal(<<"\n">>) -> <<>>;
-decode_quoted_printable_after_equal(<<A:2/binary, Tail/binary>>) ->
-    {ok, C, _} = io_lib:fread("~16u", binary_to_list(A)),
-    [C | decode_quoted_printable_line(Tail)].
+decode_quoted_printable_after_equal(Line = <<A:2/binary, Tail/binary>>) ->
+    case io_lib:fread("~16u", binary_to_list(A)) of
+	{ok, C, _} -> [C | decode_quoted_printable_line(Tail)];
+	% there are email that give broken quote printable, this is the best I can do
+	_ -> [$= | decode_quoted_printable_line(Line)]
+    end.
 
 decode_header_value(Str) ->
     case re:run(Str, "^\\=\\?([\\w-]+)\\?([QB])\\?(.*)\\?\\=",

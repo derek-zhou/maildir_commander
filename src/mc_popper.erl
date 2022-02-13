@@ -16,7 +16,8 @@ pop_all(User, Pass, Host) ->
     {ok, {TotalCount, TotalSize}} = epop_client:stat(Connection),
     lists:foreach(fun (Seq) -> pop_one(Seq, Connection) end, lists:seq(1, TotalCount)),
     epop_client:quit(Connection),
-    ?LOG_INFO("~B mails, ~B bytes downloaded by POP3", [TotalCount, TotalSize]).
+    ?LOG_NOTICE("~B mails, ~B bytes downloaded by POP3", [TotalCount, TotalSize]),
+    ok.
 
 pop_one(Seq, Connection) ->
     Filename = make_temp_mail(),

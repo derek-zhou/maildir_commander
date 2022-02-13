@@ -36,9 +36,9 @@ handle_cast({pop_all, User, Pass, Host}, State) ->
     case maps:get({User, Host}, State, undefined) of
 	undefined ->
 	    Pid = spawn_link(mc_popper, pop_all,
-			     [ binary:bin_to_list(User),
-			       binary:bin_to_list(Pass),
-			       binary:bin_to_list(Host) ]),
+			     [ unicode:characters_to_list(User),
+			       unicode:characters_to_list(Pass),
+			       unicode:characters_to_list(Host) ]),
 	    {noreply, State#{{User, Host} => Pid}};
 	Pid ->
 	    ?LOG_DEBUG("POP of ~ts@~ts is still going on: ~w", [User, Host, Pid]),

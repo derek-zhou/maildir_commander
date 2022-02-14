@@ -6,7 +6,7 @@
 
 -export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_parts/5,
 	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
-	 scrub/1, graft/2, orphan/1, snooze/0]).
+	 scrub/1, graft/2, orphan/1, snooze/0, pop_all/3]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -87,6 +87,13 @@ stream_mail(Path) ->
 	    spawn_link(?MODULE, stream_parts, [0, [], self(), Ref, Dev]),
 	    {ok, Ref}
     end.
+
+%% pop all mails from a remote pop3 mailbox
+-spec pop_all(binary(), binary(), binary()) -> ok.
+pop_all(User, Pass, Host) ->
+    mc_pop_manager:pop_all(unicode:characters_to_list(User),
+			   unicode:characters_to_list(Pass),
+			   unicode:characters_to_list(Host)).
 
 stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
     case mailfile:next_part(Level, Boundaries, Dev) of

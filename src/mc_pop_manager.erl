@@ -15,7 +15,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% from user
--spec pop_all(binary(), binary(), binary()) -> ok.
+-spec pop_all(list(), list(), list()) -> ok.
 pop_all(User, Pass, Host) ->
     gen_server:cast(?MODULE, {pop_all, User, Pass, Host}).
 
@@ -35,10 +35,7 @@ handle_call(list, _From, State) ->
 handle_cast({pop_all, User, Pass, Host}, State) ->
     case maps:get({User, Host}, State, undefined) of
 	undefined ->
-	    Pid = spawn_link(mc_popper, pop_all,
-			     [ unicode:characters_to_list(User),
-			       unicode:characters_to_list(Pass),
-			       unicode:characters_to_list(Host) ]),
+	    Pid = spawn_link(mc_popper, pop_all, [User, Pass, Host]),
 	    {noreply, State#{{User, Host} => Pid}};
 	Pid ->
 	    ?LOG_DEBUG("POP of ~ts@~ts is still going on: ~w", [User, Host, Pid]),

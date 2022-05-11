@@ -155,10 +155,10 @@ parse_header({Key, Value}, Map) ->
     case string:lowercase(Key) of
 	<<"content-type">> ->
 	    {V, Params} = parse_header_value(Value),
-	    Map#{ content_type => V, content_type_params => Params};
+	    Map#{ content_type => V, content_type_params => normalize_params(Params)};
 	<<"content-disposition">> ->
 	    {V, Params} = parse_header_value(Value),
-	    Map#{ disposition => V, disposition_params => Params};
+	    Map#{ disposition => V, disposition_params => normalize_params(Params)};
 	<<"content-transfer-encoding">> ->
 	    {V, _Params} = parse_header_value(Value),
 	    Map#{ encoding => V};
@@ -178,7 +178,8 @@ get_header_params([], Map) -> Map;
 get_header_params([$;], Map) -> Map;
 get_header_params([$;, Key, $=, Value | Tail], Map) ->
     Value2 = cast_utf8(decode_header_value(Value)),
-    get_header_params(Tail, Map#{string:lowercase(Key) => Value2});
+    Key2 = string:lowercase(parse_param_key(Key)),
+    get_header_params(Tail, update_params(Map, Key2, Value2));
 % there are broken emails out there
 get_header_params(_, Map) -> Map.
 
@@ -293,3 +294,21 @@ decode_header_value(Str) ->
 	    convert_utf8(base64:decode(Encoded), Charset);
 	_  -> Str
     end.
+
+parse_param_key(Key) ->
+    case re:run(Key, "^([\\w-]+)\\*(\\d+)$", [{capture, all_but_first, binary}]) of
+	{match, [K, _N]} -> K;
+	_ -> Key
+    end.
+
+update_params(Map, Key, Value) ->
+    case maps:get(Key, Map, undefined) of
+	undefined -> Map#{Key => Value};
+	V when is_binary(V) -> Map#{Key := [V, Value]};
+	L when is_list(L)-> Map#{Key := L ++ [Value]}
+    end.
+
+normalize_params(Map) ->
+    maps:map(fun (_K, V) when is_binary(V) -> V;
+		 (_K, V) when is_list(V) -> unicode:characters_to_binary(V)
+	     end, Map).

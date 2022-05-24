@@ -5,7 +5,7 @@
 %% public interface of maildir_commander
 
 -export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_parts/5,
-	 find/1, find/2, find/3, find/4, find/5, find/6, flag/2, move/2,
+	 find/1, find/2, find/3, find/4, find/5, find/6, find_all/6, flag/2, move/2,
 	 scrub/1, graft/2, orphan/1, snooze/0, pop_all/3]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
@@ -145,6 +145,15 @@ find(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
     Command = mc_mu_api:find(unicode:characters_to_binary(Query),
 			     Threads, Sort_field, Descending,
 			     mc_configer:default(max_num),
+			     Skip_dups, Include_related),
+    ok = mc_server:command(Command),
+    find_loop([], #{}).
+
+-spec find_all(string(), boolean(), string(), boolean(), boolean(), boolean()) ->
+	  {ok, mc_tree:t(), map()} | {error, binary()}.
+find_all(Query, Threads, Sort_field, Descending, Skip_dups, Include_related) ->
+    Command = mc_mu_api:find(unicode:characters_to_binary(Query),
+			     Threads, Sort_field, Descending, 65535,
 			     Skip_dups, Include_related),
     ok = mc_server:command(Command),
     find_loop([], #{}).

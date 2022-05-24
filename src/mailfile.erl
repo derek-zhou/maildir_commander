@@ -116,6 +116,7 @@ read_headers(Dev, Acc) ->
 	    end
     end.
 
+add_to_headers(_, []) -> [];
 add_to_headers(Str, [{Key, Value} | Tail ]) when is_binary(Value) ->
     [{Key, [Value, Str]} | Tail];
 add_to_headers(Str, [{Key, Value} | Tail ]) when is_list(Value) ->

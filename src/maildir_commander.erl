@@ -115,7 +115,8 @@ stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
 should_send(#{content_type := <<"text/plain">>}) -> true;
 should_send(#{content_type := <<"text/html">>}) -> true;
 should_send(#{content_type := <<"multipart/", _Rest/binary>>}) -> false;
-should_send(#{disposition_params := Params}) -> maps:is_key(<<"filename">>, Params);
+should_send(#{disposition_params := #{<<"filename">> := _}}) -> true;
+should_send(#{content_type_params := #{<<"name">> := _}, disposition := <<"attachment">>}) -> true;
 should_send(_) -> false.
 
 %% return all mail matching the query. return a tree of docids, and a map from docid to mail

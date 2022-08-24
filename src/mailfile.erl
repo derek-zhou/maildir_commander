@@ -256,7 +256,12 @@ parse_body(Body, Map) ->
 decode_body(Body, <<"quoted-printable">>) ->
     iolist_to_binary(lists:map(fun decode_quoted_printable_line/1, Body));
 decode_body(Body, <<"base64">>) ->
-    base64:decode(iolist_to_binary(Body));
+    Raw = iolist_to_binary(Body),
+    try base64:decode(Raw) of
+	Bin -> Bin
+    catch
+	_:_ -> Raw
+    end;
 decode_body(Body, _) ->
     iolist_to_binary(Body).
 

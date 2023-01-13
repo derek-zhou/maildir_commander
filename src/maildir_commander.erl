@@ -225,7 +225,7 @@ parse_mail_headers(Headers) ->
 		   [] -> [<<>> | <<>>];
 		   [[{<<"name">>, Name}, {<<"email">>, Email}] | _] -> [Name | Email];
 		   [[{<<"email">>, Email}, {<<"name">>, Name}] | _] -> [Name | Email];
-		   [[{<<"email">>, Email}] | _] -> [<<>> | Email]
+		   [[{<<"email">>, Email}] | _] -> [nil | Email]
 	       end,
        to => lists:map(fun parse_recipient/1, proplists:get_value(<<"to">>, Headers, [])),
        cc => lists:map(fun parse_recipient/1, proplists:get_value(<<"cc">>, Headers, [])),
@@ -242,7 +242,7 @@ parse_mail_headers(Headers) ->
 
 parse_recipient([{<<"name">>, Name}, {<<"email">>, Email}]) -> [Name | Email];
 parse_recipient([{<<"email">>, Email}, {<<"name">>, Name}]) -> [Name | Email];
-parse_recipient([{<<"email">>, Email}]) -> [<<>> | Email];
+parse_recipient([{<<"email">>, Email}]) -> [nil | Email];
 parse_recipient(_) -> [<<>> | <<>>].
 
 %% scrub all attachments
@@ -275,6 +275,6 @@ msgid_str(Parent_id) -> unicode:characters_to_binary([$<, Parent_id, $>]).
 %% parsr a contact into [Name | Mail]
 parse_contact(Contact) ->
     case re:run(Contact, "(.*)<(.*)>", [{capture, all_but_first, binary}]) of
-	nomatch -> [<<"">> | Contact];
+	nomatch -> [nil | Contact];
 	{match, [N, Mail]} -> [string:trim(N, both, "\s\r\n\t\"") | Mail]
     end.

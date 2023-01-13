@@ -42,6 +42,7 @@ find(Query, Threads, Sortfield, Descending, Maxnum, Skip_dups, Include_related) 
      {<<"threads">>, Threads},
      {<<"sortfield">>, Sortfield},
      {<<"descending">>, Descending},
+     {<<"batch-size">>, 1},
      {<<"maxnum">>, Maxnum},
      {<<"skip-dups">>, Skip_dups},
      {<<"include-related">>, Include_related}].

@@ -20,7 +20,7 @@ index_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
 	{async, [{<<"info">>, index}, {<<"status">>, complete} | Rest ]} ->
-	    {ok, proplists:get_value(<<"processed">>, Rest)};
+	    {ok, proplists:get_value(<<"checked">>, Rest)};
 	%% last 2 are chatty messages that we don't care
 	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
@@ -58,10 +58,7 @@ contacts_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
 	{async, [{<<"contacts">>, Contacts} | _ ]} ->
-	    {ok, lists:map(
-		   fun ([Contact | _]) ->
-			   parse_contact(Contact)
-		   end, Contacts)};
+	    {ok, lists:map(fun parse_contact/1, Contacts)};
 	%% last 2 are chatty messages that we don't care
 	{async, [{<<"update">>, _} | _ ]} -> ?FUNCTION_NAME();
 	{async, [{<<"info">>, _} | _ ]} -> ?FUNCTION_NAME()
@@ -189,7 +186,7 @@ move_loop() ->
 view_loop() ->
     receive
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
-	{async, [{<<"view">>, [{<<"docid">>, _Docid} | Mail ] } | _ ]} -> {ok, Mail}
+	{async, [{<<"view">>, Mail } | _ ]} -> {ok, Mail}
     end.
 
 find_loop(Tree, Mails) ->
@@ -197,7 +194,8 @@ find_loop(Tree, Mails) ->
 	{async, [{<<"error">>, _Code}, {<<"message">>, Msg} | _ ]} -> {error, Msg};
 	{async, [{<<"erase">>, t} | _ ]} -> find_loop([], #{});
 	{async, [{<<"found">>, _Total} | _ ]} -> {ok, mc_tree:finalize(Tree), Mails};
-	{async, [{<<"docid">>, Docid} | Headers ]} when is_integer(Docid) ->
+	{async, [{<<"headers">>, [Headers]} | _ ]} ->
+	    Docid = proplists:get_value(<<"docid">>, Headers, <<>>),
 	    find_loop(mc_tree:append(Docid, parse_thread_level(Headers), Tree),
 		      maps:put(Docid, parse_mail_headers(Headers), Mails));
 	%% last 2 are chatty messages that we don't care
@@ -206,13 +204,13 @@ find_loop(Tree, Mails) ->
     end.
 
 parse_thread_level(Headers) ->
-    case proplists:get_value(<<"thread">>, Headers) of
+    case proplists:get_value(<<"meta">>, Headers) of
 	undefined -> 0;
 	Thread ->
 	    case proplists:get_value(<<"level">>, Thread, 0) of
 		0 -> 0;
 		Level ->
-		    case proplists:get_value(<<"empty-parent">>, Thread, nil) of
+		    case proplists:get_value(<<"orphan">>, Thread, nil) of
 			t -> 0;
 			_ -> Level
 		    end
@@ -225,11 +223,11 @@ parse_mail_headers(Headers) ->
        from => case proplists:get_value(<<"from">>, Headers) of
 		   undefined -> [<<>> | <<>>];
 		   [] -> [<<>> | <<>>];
-		   [Add | _] -> Add
+		   [[{<<"name">>, Name}, {<<"email">>, Email}] | _] -> [Name | Email]
 	       end,
-       to => proplists:get_value(<<"to">>, Headers, []),
-       cc => proplists:get_value(<<"cc">>, Headers, []),
-       bcc => proplists:get_value(<<"bcc">>, Headers, []),
+       to => lists:map(fun parse_recipient/1, proplists:get_value(<<"to">>, Headers, [])),
+       cc => lists:map(fun parse_recipient/1, proplists:get_value(<<"cc">>, Headers, [])),
+       bcc => lists:map(fun parse_recipient/1, proplists:get_value(<<"bcc">>, Headers, [])),
        references => proplists:get_value(<<"references">>, Headers, []),
        date => case proplists:get_value(<<"date">>, Headers) of
 		   undefined -> 0;
@@ -239,6 +237,11 @@ parse_mail_headers(Headers) ->
        msgid => proplists:get_value(<<"message-id">>, Headers),
        path => unicode:characters_to_list(proplists:get_value(<<"path">>, Headers)),
        flags => proplists:get_value(<<"flags">>, Headers, []) }.
+
+parse_recipient([{<<"name">>, Name}, {<<"email">>, Email}]) -> [Name | Email];
+parse_recipient([{<<"email">>, Email}, {<<"name">>, Name}]) -> [Name | Email];
+parse_recipient([{<<"email">>, Email}]) -> [<<>> | Email];
+parse_recipient(_) -> [<<>> | <<>>].
 
 %% scrub all attachments
 -spec scrub(string()) -> ok | {error, binary()}.

@@ -223,7 +223,9 @@ parse_mail_headers(Headers) ->
        from => case proplists:get_value(<<"from">>, Headers) of
 		   undefined -> [<<>> | <<>>];
 		   [] -> [<<>> | <<>>];
-		   [[{<<"name">>, Name}, {<<"email">>, Email}] | _] -> [Name | Email]
+		   [[{<<"name">>, Name}, {<<"email">>, Email}] | _] -> [Name | Email];
+		   [[{<<"email">>, Email}, {<<"name">>, Name}] | _] -> [Name | Email];
+		   [[{<<"email">>, Email}] | _] -> [<<>> | Email]
 	       end,
        to => lists:map(fun parse_recipient/1, proplists:get_value(<<"to">>, Headers, [])),
        cc => lists:map(fun parse_recipient/1, proplists:get_value(<<"cc">>, Headers, [])),

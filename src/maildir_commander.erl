@@ -221,8 +221,8 @@ parse_mail_headers(Headers) ->
     #{ subject => proplists:get_value(<<"subject">>, Headers, <<>>),
        %% from is a list of email addresses. Pick the first one
        from => case proplists:get_value(<<"from">>, Headers) of
-		   undefined -> [<<>> | <<>>];
-		   [] -> [<<>> | <<>>];
+		   undefined -> [nil | <<>>];
+		   [] -> [nil | <<>>];
 		   [[{<<"name">>, Name}, {<<"email">>, Email}] | _] -> [Name | Email];
 		   [[{<<"email">>, Email}, {<<"name">>, Name}] | _] -> [Name | Email];
 		   [[{<<"email">>, Email}] | _] -> [nil | Email]
@@ -243,7 +243,7 @@ parse_mail_headers(Headers) ->
 parse_recipient([{<<"name">>, Name}, {<<"email">>, Email}]) -> [Name | Email];
 parse_recipient([{<<"email">>, Email}, {<<"name">>, Name}]) -> [Name | Email];
 parse_recipient([{<<"email">>, Email}]) -> [nil | Email];
-parse_recipient(_) -> [<<>> | <<>>].
+parse_recipient(_) -> [nil | <<>>].
 
 %% scrub all attachments
 -spec scrub(string()) -> ok | {error, binary()}.

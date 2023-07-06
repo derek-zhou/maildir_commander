@@ -253,17 +253,24 @@ parse_body(Body, Map) ->
 	Bin -> Map#{ content_type => <<"text/plain">>, body => Bin }
     end.
 
-decode_body(Body, <<"quoted-printable">>) ->
-    iolist_to_binary(lists:map(fun decode_quoted_printable_line/1, Body));
-decode_body(Body, <<"base64">>) ->
-    Raw = iolist_to_binary(Body),
-    try base64:decode(Raw) of
-	Bin -> Bin
-    catch
-	_:_ -> Raw
-    end;
-decode_body(Body, _) ->
-    iolist_to_binary(Body).
+decode_quoted_printable_body([], Acc) ->
+    iolist_to_binary(lists:reverse(Acc));
+decode_quoted_printable_body([Head | Tail], Acc) ->
+    decode_quoted_printable_body(Tail, [decode_quoted_printable_line(Head) | Acc]).
+
+decode_base64_body([], Acc) ->
+    iolist_to_binary(lists:reverse(Acc));
+decode_base64_body([Head | Tail], Acc) ->
+    Str = try base64:decode(Head) of
+	      Bin -> Bin
+	  catch
+	      _:_ -> Head
+	  end,
+    decode_base64_body(Tail, [Str | Acc]).
+
+decode_body(Body, <<"quoted-printable">>) -> decode_quoted_printable_body(Body, []);
+decode_body(Body, <<"base64">>) -> decode_base64_body(Body, []);
+decode_body(Body, _) -> iolist_to_binary(Body).
 
 convert_utf8(Body, <<"utf-8">>) -> Body;
 convert_utf8(Body, Charset) -> iconv:convert(Charset, <<"utf-8">>, Body).

@@ -3,7 +3,7 @@
 
 -module(mailfile).
 
--export([read_mail/1, open_mail/1, close_mail/1, next_part/3, all_parts/1]).
+-export([read_mail/1, open_mail/1, close_mail/1, next_part/3]).
 -export([write_mail/2, new_mail/1, write_parts/2, write_parts/4]).
 
 -type mime_part() :: {integer(), list(), map(), iolist()}.
@@ -239,13 +239,13 @@ get_charset(_) -> <<"utf-8">>.
 
 -spec parse_body(list(), map()) -> map().
 parse_body(Body, Map = #{content_type := Type}) ->
-    Bin1 = decode_body(Body, get_encoding(Map)),
-    Bin2 =
-	case is_text_type(Type) of
-	    true -> cast_utf8(convert_utf8(Bin1, get_charset(Map)));
-	    false -> Bin1
-	end,
-    Map#{ body => Bin2 };
+    Map#{ body =>
+	      case {is_text_type(Type), get_encoding(Map)} of
+		  {false, <<"base64">>} -> Body;
+		  {false, Encoding} -> decode_body(Body, Encoding);
+		  {true, Encoding} ->
+		      cast_utf8(convert_utf8(decode_body(Body, Encoding), get_charset(Map)))
+	      end };
 % pre MIME mail or fillers between boundaries
 parse_body(Body, Map) ->
     case string:trim(cast_utf8(iolist_to_binary(Body))) of

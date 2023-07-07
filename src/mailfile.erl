@@ -129,24 +129,24 @@ read_header(Line) ->
     end.
 
 -spec read_until(list(), file:io_device()) -> {list(), boolean()}.
-read_until([], Dev) ->
+read_until([], Dev) -> read_until_end(Dev, []);
+read_until([Boundary | _], Dev) -> read_until(Boundary, Dev, []).
+
+read_until_end(Dev, Acc) ->
     case file:read_line(Dev) of
-	eof -> {[], true};
+	eof -> {lists:reverse(Acc), true};
 	{error, Reason} -> error(Reason);
-	{ok, Line} ->
-	    {Lines, true} = read_until([], Dev),
-	    {[Line | Lines], true}
-    end;
-read_until(Boundaries = [Boundary | _], Dev) ->
+	{ok, Line} -> read_until_end(Dev, [Line | Acc])
+    end.
+
+read_until(Boundary, Dev, Acc) ->
     Size = byte_size(Boundary),
     case file:read_line(Dev) of
-	eof -> {[], true};
+	eof -> {lists:reverse(Acc), true};
 	{error, Reason} -> error(Reason);
-	{ok, <<"--", Boundary:Size/binary, "--", _/binary>>} -> {[], true};
-	{ok, <<"--", Boundary:Size/binary, _/binary>>} -> {[], false};
-	{ok, Line} ->
-	    {Lines, End} = read_until(Boundaries, Dev),
-	    {[Line | Lines], End}
+	{ok, <<"--", Boundary:Size/binary, "--", _/binary>>} -> {lists:reverse(Acc), true};
+	{ok, <<"--", Boundary:Size/binary, _/binary>>} -> {lists:reverse(Acc), false};
+	{ok, Line} -> read_until(Boundary, Dev, [Line | Acc])
     end.
 
 -spec parse_headers(list()) -> map().

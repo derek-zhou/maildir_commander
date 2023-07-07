@@ -239,12 +239,12 @@ get_charset(_) -> <<"utf-8">>.
 
 -spec parse_body(list(), map()) -> map().
 parse_body(Body, Map = #{content_type := Type}) ->
-    Encoding = get_encoding(Map),
-    Body1 = decode_body(Body, Encoding),
     Map#{ body =>
-	      case is_text_type(Type) of
-		  false -> Body1;
-		  true -> cast_utf8(convert_utf8(Body1, get_charset(Map)))
+	      case {is_text_type(Type), get_encoding(Map)} of
+		  {false, <<"base64">>} -> Body;
+		  {false, Encoding} -> decode_body(Body, Encoding);
+		  {true, Encoding} ->
+		      cast_utf8(convert_utf8(decode_body(Body, Encoding), get_charset(Map)))
 	      end };
 % pre MIME mail or fillers between boundaries
 parse_body(Body, Map) ->

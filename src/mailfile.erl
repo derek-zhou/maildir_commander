@@ -250,22 +250,19 @@ parse_body(Body, Map) ->
 	Bin -> Map#{ content_type => <<"text/plain">>, body => Bin }
     end.
 
-decode_quoted_printable_body([], Dev) ->
+dump_all(Dev) ->
     file:position(Dev, 0),
     {ok, Size} = ram_file:get_size(Dev),
     {ok, Data} = file:read(Dev, Size),
     file:close(Dev),
-    Data;
+    Data.
+
+decode_quoted_printable_body([], Dev) -> dump_all(Dev);
 decode_quoted_printable_body([Head | Tail], Dev) ->
     ok = file:write(Dev, decode_quoted_printable_line(Head)),
     decode_quoted_printable_body(Tail, Dev).
 
-decode_base64_body([], Dev) ->
-    file:position(Dev, 0),
-    {ok, Size} = ram_file:get_size(Dev),
-    {ok, Data} = file:read(Dev, Size),
-    file:close(Dev),
-    Data;
+decode_base64_body([], Dev) -> dump_all(Dev);
 decode_base64_body([Head | Tail], Dev) ->
     Str = try base64:decode(Head) of
 	      Bin -> Bin

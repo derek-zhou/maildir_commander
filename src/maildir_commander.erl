@@ -94,16 +94,16 @@ pop_all(User, Pass, Host) ->
 
 stream_parts(Level, Boundaries, Pid, Ref, Dev) ->
     case mailfile:next_part(Level, Boundaries, Dev) of
-	{-1, [], {_Level, _Headers, Parameters, _Body}} ->
+	{-1, [], {_Level, _Headers, Parameters, Body}} ->
 	    case should_send(Parameters) of
-		true -> Pid ! {mail_part, Ref, Parameters};
+		true -> Pid ! {mail_part, Ref, mailfile:parse_body(Body, Parameters)};
 		false -> ok
 	    end,
 	    Pid ! {mail_part, Ref, eof},
 	    ok = mailfile:close_mail(Dev);
-	{Level2, Boundaries2, {_Level, _Headers, Parameters, _Body}} ->
+	{Level2, Boundaries2, {_Level, _Headers, Parameters, Body}} ->
 	    case should_send(Parameters) of
-		true -> Pid ! {mail_part, Ref, Parameters};
+		true -> Pid ! {mail_part, Ref, mailfile:parse_body(Body, Parameters)};
 		false -> ok
 	    end,
 	    stream_parts(Level2, Boundaries2, Pid, Ref, Dev)

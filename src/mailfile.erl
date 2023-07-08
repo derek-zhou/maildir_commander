@@ -3,7 +3,7 @@
 
 -module(mailfile).
 
--export([read_mail/1, open_mail/1, close_mail/1, next_part/3]).
+-export([read_mail/1, open_mail/1, close_mail/1, next_part/3, parse_body/2]).
 -export([write_mail/2, new_mail/1, write_parts/2, write_parts/4]).
 
 -type mime_part() :: {integer(), list(), map(), iolist()}.
@@ -56,14 +56,11 @@ next_part(Level, Boundaries, Dev) ->
 	end,
     case read_until(Boundaries2, Dev) of
 	{Body, true} ->
-	    Part = {Level, Headers, parse_body(Body, Parameters), Body},
 	    case Level2 of
-		0 -> {-1, [], Part};
-		_ -> {Level2 - 1, tl(Boundaries2), Part}
+		0 -> {-1, [], {Level, Headers, Parameters, Body}};
+		_ -> {Level2 - 1, tl(Boundaries2), {Level, Headers, Parameters, Body}}
 	    end;
-	{Body, false} ->
-	    {Level2, Boundaries2,
-	     {Level, Headers, parse_body(Body, Parameters), Body}}
+	{Body, false} -> {Level2, Boundaries2, {Level, Headers, Parameters, Body}}
     end.
 
 -spec all_parts(file:io_device()) -> [mime_part()].

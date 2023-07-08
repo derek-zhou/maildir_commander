@@ -252,7 +252,8 @@ parse_body(Body, Map) ->
 
 decode_quoted_printable_body([], Dev) ->
     file:position(Dev, 0),
-    {ok, Data} = file:read(Dev, 67108864),
+    {ok, Size} = ram_file:get_size(Dev),
+    {ok, Data} = file:read(Dev, Size),
     file:close(Dev),
     Data;
 decode_quoted_printable_body([Head | Tail], Dev) ->
@@ -261,7 +262,8 @@ decode_quoted_printable_body([Head | Tail], Dev) ->
 
 decode_base64_body([], Dev) ->
     file:position(Dev, 0),
-    {ok, Data} = file:read(Dev, 67108864),
+    {ok, Size} = ram_file:get_size(Dev),
+    {ok, Data} = file:read(Dev, Size),
     file:close(Dev),
     Data;
 decode_base64_body([Head | Tail], Dev) ->

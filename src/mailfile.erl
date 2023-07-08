@@ -30,7 +30,7 @@ write_mail(Parts, Path) ->
 -spec open_mail(file:filename()) ->
 	  {ok, file:io_device()} | {error, file:posix() | badarg | system_limit}.
 open_mail(Path) ->
-    file:open(Path, [read, read_ahead, binary]).
+    file:open(Path, [raw, read, {read_ahead, 256}, binary]).
 
 -spec new_mail(file:filename()) ->
 	  {ok, file:io_device()} | {error, file:posix() | badarg | system_limit}.
@@ -250,23 +250,35 @@ parse_body(Body, Map) ->
 	Bin -> Map#{ content_type => <<"text/plain">>, body => Bin }
     end.
 
-decode_quoted_printable_body([], Acc) ->
-    iolist_to_binary(lists:reverse(Acc));
-decode_quoted_printable_body([Head | Tail], Acc) ->
-    decode_quoted_printable_body(Tail, [decode_quoted_printable_line(Head) | Acc]).
+decode_quoted_printable_body([], Dev) ->
+    file:position(Dev, 0),
+    {ok, Data} = file:read(Dev, 67108864),
+    file:close(Dev),
+    Data;
+decode_quoted_printable_body([Head | Tail], Dev) ->
+    ok = file:write(Dev, decode_quoted_printable_line(Head)),
+    decode_quoted_printable_body(Tail, Dev).
 
-decode_base64_body([], Acc) ->
-    iolist_to_binary(lists:reverse(Acc));
-decode_base64_body([Head | Tail], Acc) ->
+decode_base64_body([], Dev) ->
+    file:position(Dev, 0),
+    {ok, Data} = file:read(Dev, 67108864),
+    file:close(Dev),
+    Data;
+decode_base64_body([Head | Tail], Dev) ->
     Str = try base64:decode(Head) of
 	      Bin -> Bin
 	  catch
 	      _:_ -> Head
 	  end,
-    decode_base64_body(Tail, [Str | Acc]).
+    ok = file:write(Dev, Str),
+    decode_base64_body(Tail, Dev).
 
-decode_body(Body, <<"quoted-printable">>) -> decode_quoted_printable_body(Body, []);
-decode_body(Body, <<"base64">>) -> decode_base64_body(Body, []);
+decode_body(Body, <<"quoted-printable">>) ->
+    {ok, Dev} = file:open(<<>>, [read, write, ram, binary]),
+    decode_quoted_printable_body(Body, Dev);
+decode_body(Body, <<"base64">>) ->
+    {ok, Dev} = file:open(<<>>, [read, write, ram, binary]),
+    decode_base64_body(Body, Dev);
 decode_body(Body, _) -> iolist_to_binary(Body).
 
 convert_utf8(Body, <<"utf-8">>) -> Body;

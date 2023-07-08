@@ -4,7 +4,7 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_parts/5,
+-export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_mail/3,
 	 find/1, find/2, find/3, find/4, find/5, find/6, find_all/6, flag/2, move/2,
 	 scrub/1, graft/2, orphan/1, snooze/0, pop_all/3]).
 
@@ -77,12 +77,14 @@ view(Docid) ->
 %% stream full content of a mail with {mail_part, Ref, Map}
 -spec stream_mail(string()) -> {ok, reference()} | {error, binary()}.
 stream_mail(Path) ->
+    Ref = make_ref(),
+    spawn_link(?MODULE, stream_mail, [Path, self(), Ref]),
+    {ok, Ref}.
+
+stream_mail(Path, Pid, Ref) ->
     case mailfile:open_mail(Path) of
-	{error, Reason} -> {error, Reason};
-	{ok, Dev} ->
-	    Ref = make_ref(),
-	    spawn_link(?MODULE, stream_parts, [0, [], self(), Ref, Dev]),
-	    {ok, Ref}
+	{error, _Reason} -> Pid ! {mail_part, Ref, eof};
+	{ok, Dev} -> stream_parts(0, [], Pid, Ref, Dev)
     end.
 
 %% pop all mails from a remote pop3 mailbox

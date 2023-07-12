@@ -253,11 +253,11 @@ parse_body(Body, Map) ->
 dump_all(Dev) ->
     file:position(Dev, 0),
     case ram_file:get_size(Dev) of
-	{Ok, 0} ->
+	{ok, 0} ->
 	    file:close(Dev),
 	    <<>>;
 
-	{Ok, Size} ->
+	{ok, Size} ->
 	    {ok, Data} = file:read(Dev, Size),
 	    file:close(Dev),
 	    Data

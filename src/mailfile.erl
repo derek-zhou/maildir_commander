@@ -252,10 +252,16 @@ parse_body(Body, Map) ->
 
 dump_all(Dev) ->
     file:position(Dev, 0),
-    {ok, Size} = ram_file:get_size(Dev),
-    {ok, Data} = file:read(Dev, Size),
-    file:close(Dev),
-    Data.
+    case ram_file:get_size(Dev) of
+	{Ok, 0} ->
+	    file:close(Dev),
+	    <<>>;
+
+	{Ok, Size} ->
+	    {ok, Data} = file:read(Dev, Size),
+	    file:close(Dev),
+	    Data
+    end.
 
 decode_quoted_printable_body([], Dev) -> dump_all(Dev);
 decode_quoted_printable_body([Head | Tail], Dev) ->

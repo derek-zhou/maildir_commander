@@ -3,6 +3,8 @@
 
 -module(mailfile).
 
+-include_lib("kernel/include/logger.hrl").
+
 -export([read_mail/1, open_mail/1, close_mail/1, next_part/3, parse_body/2]).
 -export([write_mail/2, new_mail/1, write_parts/2, write_parts/4]).
 
@@ -212,7 +214,9 @@ tokenize_header_value_in_token(Str, Buffer, Tokens) ->
 tokenize_header_value_in_quote(Str, Buffer, Tokens) ->
     case string:next_codepoint(Str) of
 	[] ->
-	    error("unexpected end of string");
+	    C = unicode:characters_to_binary(lists:reverse(Buffer)),
+	    ?LOG_ERROR("unexpected end of string: ~ts", [C]),
+	    lists:reverse([C | Tokens]);
 	[$\" | Tail] ->
 	    C = unicode:characters_to_binary(lists:reverse(Buffer)),
 	    tokenize_header_value(Tail, [C | Tokens]);

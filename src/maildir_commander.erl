@@ -4,9 +4,9 @@
 
 %% public interface of maildir_commander
 
--export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_mail/3,
+-export([index/0, add/1, delete/1, contacts/0, view/1, stream_mail/1, stream_mail/2,
 	 find/1, find/2, find/3, find/4, find/5, find/6, find_all/6, flag/2, move/2,
-	 scrub/1, graft/2, orphan/1, snooze/0, pop_all/3]).
+	 scrub/1, graft/2, orphan/1, snooze/0, pop_all/3, stream_mail/3]).
 
 %% rerun indexing. return {ok, Num} where Num is the number of messages indexed
 %% or {error, Msg} where Msg is a binary string for the error
@@ -80,6 +80,10 @@ stream_mail(Path) ->
     Ref = make_ref(),
     spawn_link(?MODULE, stream_mail, [Path, self(), Ref]),
     {ok, Ref}.
+
+stream_mail(Path, Ref) ->
+    spawn_link(?MODULE, stream_mail, [Path, self(), Ref]),
+    ok.
 
 stream_mail(Path, Pid, Ref) ->
     case mailfile:open_mail(Path) of
